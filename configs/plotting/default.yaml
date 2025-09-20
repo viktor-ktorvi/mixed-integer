@@ -1,0 +1,12 @@
+axes:
+  grid: True
+
+font:
+  size: 18
+
+figure:
+  autolayout: True
+  figsize: [14,7]
+  dpi: 130
+
+subplot_title_fontsize: 13

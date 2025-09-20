@@ -1,4 +1,4 @@
-name: my-python-project-env
+name: mixed-integer-env
 channels:
   - conda-forge
 dependencies:
