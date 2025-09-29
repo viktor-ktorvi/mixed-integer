@@ -55,9 +55,8 @@ def main():
 
         if bus_types[i] == BusType.PQ:
             if i in gen_bus_indices:
-                gen_idx = np.argwhere(gen_bus_indices == i).item()
-                m.fix(Pg[i], val=ppc["gen"][gen_idx, idx_gen.PG] / ppc["baseMVA"])
-                m.fix(Qg[i], val=ppc["gen"][gen_idx, idx_gen.QG] / ppc["baseMVA"])
+                m.fix(Pg[i], val=sum(ppc["gen"][gen_bus_indices == i, idx_gen.PG]) / ppc["baseMVA"])
+                m.fix(Qg[i], val=sum(ppc["gen"][gen_bus_indices == i, idx_gen.QG]) / ppc["baseMVA"])
             else:
                 m.fix(Pg[i], val=0)
                 m.fix(Qg[i], val=0)
@@ -65,8 +64,7 @@ def main():
         if bus_types[i] == BusType.PV:
             m.fix(Vm[i], val=ppc["bus"][i, idx_bus.VM])
             if i in gen_bus_indices:
-                gen_idx = np.argwhere(gen_bus_indices == i).item()
-                m.fix(Pg[i], val=ppc["gen"][gen_idx, idx_gen.PG] / ppc["baseMVA"])
+                m.fix(Pg[i], val=sum(ppc["gen"][gen_bus_indices == i, idx_gen.PG]) / ppc["baseMVA"])
             else:
                 m.fix(Pg[i], val=0)
 
@@ -102,10 +100,25 @@ def main():
     m.options.RTOL = 1e-8
     m.solve(disp=True)
 
+    # extract values
     theta_gekko = np.rad2deg(np.array([theta[i].value[0] for i in range(nb)]))
     Vm_gekko = np.array([Vm[i].value[0] for i in range(nb)])
-    Pg_gekko = np.array([Pg[int(i)].value[0] for i in gen_bus_indices]) * ppc["baseMVA"]
-    Qg_gekko = np.array([Qg[int(i)].value[0] for i in gen_bus_indices]) * ppc["baseMVA"]
+
+    # extract generator values (account for multiple generators )
+    gen_bus_indices = list(ppc["gen"][:, idx_gen.GEN_BUS].astype(int))
+    ng = ppc["gen"].shape[0]
+    Pg_gekko = np.zeros((ng,))
+    Qg_gekko = np.zeros((ng,))
+    occurrence_flags = {key: False for key in np.unique(gen_bus_indices)}
+    for i in range(ng):
+        bus_idx = gen_bus_indices[i]
+        count = gen_bus_indices.count(bus_idx)
+
+        Pg_gekko[i] = Pg[bus_idx].value[0] * ppc["baseMVA"] * int(not occurrence_flags[bus_idx])
+        Qg_gekko[i] = Qg[bus_idx].value[0] * ppc["baseMVA"] / count
+
+        if count > 1:
+            occurrence_flags[bus_idx] = True
 
     # compare with pypower solution
     ppopt = ppoption(OUT_ALL=0, VERBOSE=0)

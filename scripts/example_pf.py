@@ -8,7 +8,6 @@ from pypower.ppoption import ppoption
 from pypower.runpf import runpf
 
 from src.power_flow.model import get_gekko_power_flow_model
-from src.power_flow.utils import get_gen_bus_indices
 
 
 def main():
@@ -33,13 +32,27 @@ def main():
     Pg = variables.Pg
     Qg = variables.Qg
 
+    # extract values
     nb = ppc["bus"].shape[0]
 
-    gen_bus_indices = get_gen_bus_indices(ppc)
     theta_gekko = np.rad2deg(np.array([theta[i].value[0] for i in range(nb)]))
     Vm_gekko = np.array([Vm[i].value[0] for i in range(nb)])
-    Pg_gekko = np.array([Pg[int(i)].value[0] for i in gen_bus_indices]) * ppc["baseMVA"]
-    Qg_gekko = np.array([Qg[int(i)].value[0] for i in gen_bus_indices]) * ppc["baseMVA"]
+
+    # extract generator values (account for multiple generators )
+    gen_bus_indices = list(ppc["gen"][:, idx_gen.GEN_BUS].astype(int))
+    ng = ppc["gen"].shape[0]
+    Pg_gekko = np.zeros((ng,))
+    Qg_gekko = np.zeros((ng,))
+    occurrence_flags = {key: False for key in np.unique(gen_bus_indices)}
+    for i in range(ng):
+        bus_idx = gen_bus_indices[i]
+        count = gen_bus_indices.count(bus_idx)
+
+        Pg_gekko[i] = Pg[bus_idx].value[0] * ppc["baseMVA"] * int(not occurrence_flags[bus_idx])
+        Qg_gekko[i] = Qg[bus_idx].value[0] * ppc["baseMVA"] / count
+
+        if count > 1:
+            occurrence_flags[bus_idx] = True
 
     # compare with pypower solution
     ppopt = ppoption(OUT_ALL=0, VERBOSE=0)

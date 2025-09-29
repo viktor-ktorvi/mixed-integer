@@ -52,9 +52,8 @@ def get_gekko_power_flow_model(ppc: dict) -> tuple[GEKKO, PowerFlowVariables]:
 
         if bus_types[i] == BusType.PQ:
             if i in gen_bus_indices:
-                gen_idx = np.argwhere(gen_bus_indices == i).item()
-                m.fix(Pg[i], val=ppc["gen"][gen_idx, idx_gen.PG] / ppc["baseMVA"])
-                m.fix(Qg[i], val=ppc["gen"][gen_idx, idx_gen.QG] / ppc["baseMVA"])
+                m.fix(Pg[i], val=sum(ppc["gen"][gen_bus_indices == i, idx_gen.PG]) / ppc["baseMVA"])
+                m.fix(Qg[i], val=sum(ppc["gen"][gen_bus_indices == i, idx_gen.QG]) / ppc["baseMVA"])
             else:
                 m.fix(Pg[i], val=0)
                 m.fix(Qg[i], val=0)
@@ -62,8 +61,7 @@ def get_gekko_power_flow_model(ppc: dict) -> tuple[GEKKO, PowerFlowVariables]:
         if bus_types[i] == BusType.PV:
             m.fix(Vm[i], val=ppc["bus"][i, idx_bus.VM])
             if i in gen_bus_indices:
-                gen_idx = np.argwhere(gen_bus_indices == i).item()
-                m.fix(Pg[i], val=ppc["gen"][gen_idx, idx_gen.PG] / ppc["baseMVA"])
+                m.fix(Pg[i], val=sum(ppc["gen"][gen_bus_indices == i, idx_gen.PG]) / ppc["baseMVA"])
             else:
                 m.fix(Pg[i], val=0)
 
