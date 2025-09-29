@@ -6,7 +6,7 @@ from gekko.gk_variable import GKVariable
 from pypower import idx_bus, idx_gen
 from pypower.makeYbus import makeYbus
 
-from src.power_flow.utils import BusType, get_bus_types, get_gen_bus_indices
+from src.utils.pypower import BusType, get_bus_types, get_gen_bus_indices
 
 
 @dataclass

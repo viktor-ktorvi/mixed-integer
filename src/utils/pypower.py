@@ -1,6 +1,6 @@
 from enum import IntEnum
 
-import numpy.typing as npt
+from numpy import typing as npt
 from pypower import idx_bus, idx_gen
 
 
