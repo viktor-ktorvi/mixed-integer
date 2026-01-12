@@ -42,10 +42,12 @@ def main():
 
     n_sub = env.n_sub
     n_line = env.n_line  # num actual lines + num trafos
+    n_actual_line = net.line.shape[0]
+    n_trafo = net.trafo.shape[0]
 
-    baseMVA = net.sn_mva
-    net_line_from_to = tuple(zip(net.line["from_bus"].to_numpy(), net.line["to_bus"].to_numpy()))
-    net_trafo_from_to = tuple(zip(net.trafo["hv_bus"].to_numpy(), net.trafo["lv_bus"].to_numpy()))
+    assert n_line == n_actual_line + n_trafo
+
+    baseMVA = net.sn_mva    # todo nek bude samo net.sn_mva
 
     # calc admittances
     Yff = np.zeros((n_line,), dtype=np.complex128)
@@ -53,22 +55,14 @@ def main():
     Ytf = np.zeros((n_line,), dtype=np.complex128)
     Ytt = np.zeros((n_line,), dtype=np.complex128)
 
-    for i in range(n_line):
-        sub_from = env.line_or_to_subid[i]
-        sub_to = env.line_ex_to_subid[i]
+    # pretpostavljamo da prvo idu svi vodovi, pa posle svi trafoi
+    for line_idx in range(n_actual_line):
+        # https://pandapower.readthedocs.io/en/latest/elements/line.html
 
-        base_kV = net.bus["vn_kv"].to_numpy()
+        sub_to = env.line_ex_to_subid[line_idx]
+        z_base = net.bus["vn_kv"][sub_to] ** 2 / baseMVA  # pu
 
-        # TODO za trafo Vn je onaj na LV strani. Kako znam koje je to?
-        #  da l se uopste to cita iz Bus tabele? Mozda je onaj iz trafo tabele
-
-        sub_from_to = (sub_from, sub_to)
-        if sub_from_to in net_line_from_to:
-            # https://pandapower.readthedocs.io/en/latest/elements/line.html
-
-            z_base = base_kV[sub_to] ** 2 / baseMVA  # pu, the k^2 / M cancels out
-            line_idx = net_line_from_to.index(sub_from_to)
-            z = (
+        z = (
                 (net.line["r_ohm_per_km"] + 1j * net.line["x_ohm_per_km"])
                 * net.line["length_km"]
                 / net.line["parallel"]
@@ -79,47 +73,46 @@ def main():
                 * net.line["length_km"]
                 * net.line["parallel"]
                 * z_base
-            )[line_idx]
+        )[line_idx]
 
-            Yff[i] = y / 2 + 1 / z
-            Yft[i] = -1 / z
-            Ytf[i] = -1 / z
-            Ytt[i] = y / 2 + 1 / z
+        Yff[line_idx] = y / 2 + 1 / z
+        Yft[line_idx] = -1 / z
+        Ytf[line_idx] = -1 / z
+        Ytt[line_idx] = y / 2 + 1 / z
 
-        elif sub_from_to in net_trafo_from_to:
-            # https://pandapower.readthedocs.io/en/latest/elements/trafo.html
+    for trafo_idx in range(n_trafo):
+        # https://pandapower.readthedocs.io/en/latest/elements/trafo.html
+        line_idx = n_actual_line + trafo_idx
+        sub_from = env.line_or_to_subid[line_idx]
+        sub_to = env.line_ex_to_subid[line_idx]
 
-            trafo_idx = net_trafo_from_to.index(sub_from_to)
+        z_k = net.trafo["vk_percent"] / 100 * baseMVA / net.trafo["sn_mva"]
+        r_k = net.trafo["vkr_percent"] / 100 * baseMVA / net.trafo["sn_mva"]
+        x_k = np.sqrt(z_k ** 2 - r_k ** 2)
+        z = (r_k + 1j * x_k)[trafo_idx]
 
-            z_k = net.trafo["vk_percent"] / 100 * baseMVA / net.trafo["sn_mva"]
-            r_k = net.trafo["vkr_percent"] / 100 * baseMVA / net.trafo["sn_mva"]
-            x_k = np.sqrt(z_k**2 - r_k**2)
-            z = (r_k + 1j * x_k)[trafo_idx]
+        y_m_mod = net.trafo["i0_percent"] / 100
+        g_m = net.trafo["pfe_kw"] / net.trafo["sn_mva"] / 1000 * baseMVA / net.trafo["sn_mva"]
+        b_m = np.sqrt(y_m_mod ** 2 - g_m ** 2)
+        y = (g_m - 1j * b_m)[trafo_idx]
 
-            y_m_mod = net.trafo["i0_percent"] / 100
-            g_m = net.trafo["pfe_kw"] / net.trafo["sn_mva"] / 1000 * baseMVA / net.trafo["sn_mva"]
-            b_m = np.sqrt(y_m_mod**2 - g_m**2)
-            y = (g_m - 1j * b_m)[trafo_idx]
+        assert net.trafo["tap_changer_type"][trafo_idx] in ["Ratio", None]
 
-            assert net.trafo["tap_changer_type"][trafo_idx] in ["Ratio", None]
-
-            tap_side = net.trafo["tap_side"][trafo_idx]
-            tap_changer_ratio = (
+        tap_side = net.trafo["tap_side"][trafo_idx]
+        tap_changer_ratio = (
                 1 + (net.trafo["tap_pos"] - net.trafo["tap_neutral"]) * net.trafo["tap_step_percent"] / 100
-            )
-            trafo_vn_lv_kv = net.trafo["vn_lv_kv"] * tap_changer_ratio if tap_side == "lv" else net.trafo["vn_lv_kv"]
-            trafo_vn_hv_kv = net.trafo["vn_hv_kv"] * tap_changer_ratio if tap_side == "hv" else net.trafo["vn_hv_kv"]
+        )
+        trafo_vn_lv_kv = net.trafo["vn_lv_kv"] * tap_changer_ratio if tap_side == "lv" else net.trafo["vn_lv_kv"]
+        trafo_vn_hv_kv = net.trafo["vn_hv_kv"] * tap_changer_ratio if tap_side == "hv" else net.trafo["vn_hv_kv"]
 
-            n_mod = trafo_vn_hv_kv / trafo_vn_lv_kv * base_kV[sub_to] / base_kV[sub_from]
-            phase_shift = net.trafo["shift_degree"] * np.pi / 180  # rad
-            n = (n_mod * np.exp(1j * phase_shift))[trafo_idx]
+        n_mod = trafo_vn_hv_kv / trafo_vn_lv_kv * net.bus["vn_kv"][sub_to] / net.bus["vn_kv"][sub_from]
+        phase_shift = net.trafo["shift_degree"] * np.pi / 180  # rad
+        n = (n_mod * np.exp(1j * phase_shift))[trafo_idx]
 
-            Yff[i] = (0.5 * y * z + 1) / (n**2 * z * (0.25 * y * z + 1))
-            Yft[i] = -1 / (n * z * (0.25 * y * z + 1))
-            Ytf[i] = -1 / (n * z * (0.25 * y * z + 1))
-            Ytt[i] = (0.5 * y * z + 1) / (z * (0.25 * y * z + 1))
-        else:
-            raise ValueError(f"from-to-tuple {sub_from_to} doesn't exist in net.")
+        Yff[line_idx] = (0.5 * y * z + 1) / (n ** 2 * z * (0.25 * y * z + 1))
+        Yft[line_idx] = -1 / (n * z * (0.25 * y * z + 1))
+        Ytf[line_idx] = -1 / (n * z * (0.25 * y * z + 1))
+        Ytt[line_idx] = (0.5 * y * z + 1) / (z * (0.25 * y * z + 1))
 
     # pretpostavlja se da je prvih n_sub bus 1, a drugih n_bus bus 2
 
