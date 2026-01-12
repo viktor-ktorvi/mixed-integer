@@ -61,7 +61,7 @@ def main():
         # https://pandapower.readthedocs.io/en/latest/elements/line.html
 
         sub_to = env.line_ex_to_subid[line_idx]
-        z_base = net.bus["vn_kv"][sub_to] ** 2 / baseMVA  # pu
+        z_base = net.bus["vn_kv"].iloc[sub_to] ** 2 / baseMVA  # pu
 
         z = (
                 (net.line["r_ohm_per_km"] + 1j * net.line["x_ohm_per_km"])
@@ -106,7 +106,7 @@ def main():
         trafo_vn_lv_kv = net.trafo["vn_lv_kv"] * tap_changer_ratio if tap_side == "lv" else net.trafo["vn_lv_kv"]
         trafo_vn_hv_kv = net.trafo["vn_hv_kv"] * tap_changer_ratio if tap_side == "hv" else net.trafo["vn_hv_kv"]
 
-        n_mod = trafo_vn_hv_kv / trafo_vn_lv_kv * net.bus["vn_kv"][sub_to] / net.bus["vn_kv"][sub_from]
+        n_mod = trafo_vn_hv_kv / trafo_vn_lv_kv * net.bus["vn_kv"].iloc[sub_to] / net.bus["vn_kv"].iloc[sub_from]
         phase_shift = net.trafo["shift_degree"] * np.pi / 180  # rad
         n = (n_mod * np.exp(1j * phase_shift)).iloc[trafo_idx]
 
