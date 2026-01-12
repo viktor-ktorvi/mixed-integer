@@ -87,15 +87,19 @@ def main():
         sub_from = env.line_or_to_subid[line_idx]
         sub_to = env.line_ex_to_subid[line_idx]
 
-        z_k = net.trafo["vk_percent"] / 100 * baseMVA / net.trafo["sn_mva"]
-        r_k = net.trafo["vkr_percent"] / 100 * baseMVA / net.trafo["sn_mva"]
-        x_k = np.sqrt(z_k ** 2 - r_k ** 2)
-        z = (r_k + 1j * x_k).iloc[trafo_idx]
+        z_k = net.trafo["vk_percent"].iloc[trafo_idx] / 100
 
-        y_m_mod = net.trafo["i0_percent"] / 100
-        g_m = net.trafo["pfe_kw"] / net.trafo["sn_mva"] / 1000 * baseMVA / net.trafo["sn_mva"]
+        r_k = net.trafo["vkr_percent"].iloc[trafo_idx] / 100
+        x_k = np.sqrt(z_k ** 2 - r_k ** 2)
+
+        z_ref = (net.trafo["vn_lv_kv"]**2 / net.trafo["sn_mva"]).iloc[trafo_idx]
+        z_base = net.bus["vn_kv"].iloc[sub_to]**2 / baseMVA
+        z = (r_k + 1j * x_k) * z_ref / z_base
+
+        y_m_mod = net.trafo["i0_percent"].iloc[trafo_idx] / 100
+        g_m = net.trafo["pfe_kw"].iloc[trafo_idx] / net.trafo["sn_mva"].iloc[trafo_idx] / 1000
         b_m = np.sqrt(y_m_mod ** 2 - g_m ** 2)
-        y = (g_m - 1j * b_m).iloc[trafo_idx]
+        y = (g_m - 1j * b_m) * z_base / z_ref
 
         assert net.trafo["tap_changer_type"].iloc[trafo_idx] in ["Ratio", None]
 
