@@ -34,8 +34,9 @@ def get_bus_voltage(net, bus_id: int) -> tuple[float, float]:
 def main():
     threshold = 1e-4
     # create an environment
-    env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
+    # env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
     # env_name = "l2rpn_icaps_2021_small"
+    env_name = "l2rpn_idf_2023"
     env = grid2op.make(env_name)
     obs = env.reset()
     net = env.backend._grid
@@ -67,13 +68,13 @@ def main():
                 * net.line["length_km"]
                 / net.line["parallel"]
                 / z_base
-        )[line_idx]
+        ).iloc[line_idx]
         y = (
                 (net.line["g_us_per_km"] * 1e-6 + 1j * 2 * np.pi * net.f_hz * net.line["c_nf_per_km"] * 1e-9)
                 * net.line["length_km"]
                 * net.line["parallel"]
                 * z_base
-        )[line_idx]
+        ).iloc[line_idx]
 
         Yff[line_idx] = y / 2 + 1 / z
         Yft[line_idx] = -1 / z
@@ -89,16 +90,16 @@ def main():
         z_k = net.trafo["vk_percent"] / 100 * baseMVA / net.trafo["sn_mva"]
         r_k = net.trafo["vkr_percent"] / 100 * baseMVA / net.trafo["sn_mva"]
         x_k = np.sqrt(z_k ** 2 - r_k ** 2)
-        z = (r_k + 1j * x_k)[trafo_idx]
+        z = (r_k + 1j * x_k).iloc[trafo_idx]
 
         y_m_mod = net.trafo["i0_percent"] / 100
         g_m = net.trafo["pfe_kw"] / net.trafo["sn_mva"] / 1000 * baseMVA / net.trafo["sn_mva"]
         b_m = np.sqrt(y_m_mod ** 2 - g_m ** 2)
-        y = (g_m - 1j * b_m)[trafo_idx]
+        y = (g_m - 1j * b_m).iloc[trafo_idx]
 
-        assert net.trafo["tap_changer_type"][trafo_idx] in ["Ratio", None]
+        assert net.trafo["tap_changer_type"].iloc[trafo_idx] in ["Ratio", None]
 
-        tap_side = net.trafo["tap_side"][trafo_idx]
+        tap_side = net.trafo["tap_side"].iloc[trafo_idx]
         tap_changer_ratio = (
                 1 + (net.trafo["tap_pos"] - net.trafo["tap_neutral"]) * net.trafo["tap_step_percent"] / 100
         )
@@ -107,7 +108,7 @@ def main():
 
         n_mod = trafo_vn_hv_kv / trafo_vn_lv_kv * net.bus["vn_kv"][sub_to] / net.bus["vn_kv"][sub_from]
         phase_shift = net.trafo["shift_degree"] * np.pi / 180  # rad
-        n = (n_mod * np.exp(1j * phase_shift))[trafo_idx]
+        n = (n_mod * np.exp(1j * phase_shift)).iloc[trafo_idx]
 
         Yff[line_idx] = (0.5 * y * z + 1) / (n ** 2 * z * (0.25 * y * z + 1))
         Yft[line_idx] = -1 / (n * z * (0.25 * y * z + 1))
@@ -184,7 +185,7 @@ def main():
                 Qf_line = Vm_f*a_f*(Vm_f*a_f*(-Yff_i*np.sin(theta_f) + Yff_r*np.cos(theta_f))*np.sin(theta_f) + Vm_f*a_f*(-Yff_i*np.cos(theta_f) - Yff_r*np.sin(theta_f))*np.cos(theta_f) + (-Vm_t1*Yft_i*(1 - a_t)*np.sin(theta_t1) + Vm_t1*Yft_r*(1 - a_t)*np.cos(theta_t1) - Vm_t2*Yft_i*a_t*np.sin(theta_t2) + Vm_t2*Yft_r*a_t*np.cos(theta_t2))*np.sin(theta_f) + (-Vm_t1*Yft_i*(1 - a_t)*np.cos(theta_t1) - Vm_t1*Yft_r*(1 - a_t)*np.sin(theta_t1) - Vm_t2*Yft_i*a_t*np.cos(theta_t2) - Vm_t2*Yft_r*a_t*np.sin(theta_t2))*np.cos(theta_f))  # noqa: E226
             # fmt: on
 
-            if net.bus["in_service"][bus_id]:
+            if net.bus["in_service"].iloc[bus_id]:
                 pf_correct = np.abs(Pf_line - obs.p_or[line_f_idx] / baseMVA) < threshold
                 qf_correct = np.abs(Qf_line - obs.q_or[line_f_idx] / baseMVA) < threshold
             else:
@@ -226,7 +227,7 @@ def main():
                 Qt_line = Vm_t*a_t*(Vm_t*a_t*(-Ytt_i*np.sin(theta_t) + Ytt_r*np.cos(theta_t))*np.sin(theta_t) + Vm_t*a_t*(-Ytt_i*np.cos(theta_t) - Ytt_r*np.sin(theta_t))*np.cos(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*np.sin(theta_f1) + Vm_f1*Ytf_r*(1 - a_f)*np.cos(theta_f1) - Vm_f2*Ytf_i*a_f*np.sin(theta_f2) + Vm_f2*Ytf_r*a_f*np.cos(theta_f2))*np.sin(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*np.cos(theta_f1) - Vm_f1*Ytf_r*(1 - a_f)*np.sin(theta_f1) - Vm_f2*Ytf_i*a_f*np.cos(theta_f2) - Vm_f2*Ytf_r*a_f*np.sin(theta_f2))*np.cos(theta_t))  # noqa: E226
             # fmt: on
 
-            if net.bus["in_service"][bus_id]:
+            if net.bus["in_service"].iloc[bus_id]:
                 pt_correct = np.abs(Pt_line - obs.p_ex[line_t_idx] / baseMVA) < threshold
                 qt_correct = np.abs(Qt_line - obs.q_ex[line_t_idx] / baseMVA) < threshold
             else:
