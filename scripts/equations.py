@@ -32,7 +32,7 @@ def get_bus_voltage(net, bus_id: int) -> tuple[float, float]:
 
 
 def main():
-    num_dec = 4
+    threshold = 1e-4
     # create an environment
     env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
     # env_name = "l2rpn_icaps_2021_small"
@@ -73,8 +73,8 @@ def main():
                 * net.line["length_km"]
                 / net.line["parallel"]
                 / z_base
-            )[line_idx]
-            y = (
+        )[line_idx]
+        y = (
                 (net.line["g_us_per_km"] * 1e-6 + 1j * 2 * np.pi * net.f_hz * net.line["c_nf_per_km"] * 1e-9)
                 * net.line["length_km"]
                 * net.line["parallel"]
@@ -123,8 +123,7 @@ def main():
 
     # pretpostavlja se da je prvih n_sub bus 1, a drugih n_bus bus 2
 
-    bus_id = 3  # for each bus
-    for bus_id in range(n_sub, 2 * n_sub):
+    for bus_id in range(2 * n_sub):
         sub_id = get_bus_subid(bus_id, n_sub=n_sub)  # sub_id [0, n_sub - 1]
         busbar = get_bus_busbar_number(bus_id, n_sub=n_sub)
 
@@ -164,7 +163,6 @@ def main():
 
         # line or
         line_f_ids_at_sub = np.argwhere(sub_id == obs.line_or_to_subid).flatten()
-        print(f"{line_f_ids_at_sub=}")
 
         Pf = 0.0
         Qf = 0.0
@@ -194,8 +192,8 @@ def main():
             # fmt: on
 
             if net.bus["in_service"][bus_id]:
-                pf_correct = round(Pf_line, num_dec) == round(obs.p_or[line_f_idx] / baseMVA, num_dec)
-                qf_correct = round(Qf_line, num_dec) == round(obs.q_or[line_f_idx] / baseMVA, num_dec)
+                pf_correct = np.abs(Pf_line - obs.p_or[line_f_idx] / baseMVA) < threshold
+                qf_correct = np.abs(Qf_line - obs.q_or[line_f_idx] / baseMVA) < threshold
             else:
                 pf_correct = Pf_line == 0
                 qf_correct = Qf_line == 0
@@ -208,7 +206,6 @@ def main():
         # line ex
         line_t_ids_at_sub = np.argwhere(sub_id == obs.line_ex_to_subid).flatten()
 
-        print(f"{line_t_ids_at_sub=}")
         Pt = 0.0
         Qt = 0.0
         for line_t_idx in line_t_ids_at_sub:
@@ -237,8 +234,8 @@ def main():
             # fmt: on
 
             if net.bus["in_service"][bus_id]:
-                pt_correct = round(Pt_line, num_dec) == round(obs.p_ex[line_t_idx] / baseMVA, num_dec)
-                qt_correct = round(Qt_line, num_dec) == round(obs.q_ex[line_t_idx] / baseMVA, num_dec)
+                pt_correct = np.abs(Pt_line - obs.p_ex[line_t_idx] / baseMVA) < threshold
+                qt_correct = np.abs(Qt_line - obs.q_ex[line_t_idx] / baseMVA) < threshold
             else:
                 pt_correct = Pt_line == 0
                 qt_correct = Qt_line == 0
@@ -251,9 +248,11 @@ def main():
         P_balance = Pg_bus - Pl_bus - Psh - Pf - Pt
         Q_balance = Qg_bus - Ql_bus - Qsh - Qf - Qt
 
-        p_balance_correct = P_balance < 1e-6
-        q_balance_correct = Q_balance < 1e-6
 
+        p_balance_correct = np.abs(P_balance) < threshold
+        q_balance_correct = np.abs(Q_balance) < threshold
+
+        print(f"{bus_id=}")
         print(f"{P_balance=}")
         print(f"{Q_balance=}")
 
