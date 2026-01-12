@@ -134,11 +134,11 @@ def main():
 
         shunt_ids_at_sub = np.argwhere(sub_id == env.shunt_to_subid).flatten()
         # https://pandapower.readthedocs.io/en/latest/elements/shunt.html
-        g_sh = net.shunt["p_mw"] * net.shunt["step"] / baseMVA
-        b_sh = net.shunt["q_mvar"] * net.shunt["step"] / baseMVA
+        g_sh = net.shunt["p_mw"] * net.shunt["step"] / baseMVA * net.shunt["in_service"]
+        b_sh = net.shunt["q_mvar"] * net.shunt["step"] / baseMVA * net.shunt["in_service"]
         Vm, _ = get_bus_voltage(net, bus_id)
-        Psh = np.sum(Vm**2 * g_sh[shunt_ids_at_sub])
-        Qsh = np.sum(Vm**2 * (-b_sh[shunt_ids_at_sub]))
+        Psh = np.sum(Vm**2 * g_sh.iloc[shunt_ids_at_sub])
+        Qsh = np.sum(Vm**2 * (-b_sh.iloc[shunt_ids_at_sub]))
 
         if busbar == 1:
             Pg_bus = np.sum((1 - a_gen) * P_gen)
@@ -238,8 +238,9 @@ def main():
             Pt += Pt_line
             Qt += Qt_line
 
-        P_balance = Pg_bus - Pl_bus - Psh - Pf - Pt
-        Q_balance = Qg_bus - Ql_bus - Qsh - Qf - Qt
+        # NOTE: seems like shunt power doesn't go into this
+        P_balance = Pg_bus - Pl_bus + Psh - Pf  - Pt
+        Q_balance = Qg_bus - Ql_bus + Qsh - Qf - Qt
 
 
         p_balance_correct = np.abs(P_balance) < threshold
