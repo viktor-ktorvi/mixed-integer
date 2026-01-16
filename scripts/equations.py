@@ -1,7 +1,7 @@
 import grid2op
 import numpy as np
 
-# TODO testiraj na brute force agentu
+# TODO testiraj na brute force agentu (TopologyGreedy)
 #  i na random agentu
 #  tako se menja topologija
 
@@ -39,6 +39,8 @@ def main():
     env_name = "l2rpn_idf_2023"
     env = grid2op.make(env_name)
     obs = env.reset()
+
+    # TODO od ovoga da se napravi funkcija
     net = env.backend._grid
 
     n_sub = env.n_sub
@@ -48,7 +50,7 @@ def main():
 
     assert n_line == n_actual_line + n_trafo
 
-    baseMVA = net.sn_mva    # todo nek bude samo net.sn_mva
+    baseMVA = net.sn_mva  # todo nek bude samo net.sn_mva
 
     # calc admittances
     Yff = np.zeros((n_line,), dtype=np.complex128)
@@ -64,16 +66,16 @@ def main():
         z_base = net.bus["vn_kv"].iloc[sub_to] ** 2 / baseMVA  # pu
 
         z = (
-                (net.line["r_ohm_per_km"] + 1j * net.line["x_ohm_per_km"])
-                * net.line["length_km"]
-                / net.line["parallel"]
-                / z_base
+            (net.line["r_ohm_per_km"] + 1j * net.line["x_ohm_per_km"])
+            * net.line["length_km"]
+            / net.line["parallel"]
+            / z_base
         ).iloc[line_idx]
         y = (
-                (net.line["g_us_per_km"] * 1e-6 + 1j * 2 * np.pi * net.f_hz * net.line["c_nf_per_km"] * 1e-9)
-                * net.line["length_km"]
-                * net.line["parallel"]
-                * z_base
+            (net.line["g_us_per_km"] * 1e-6 + 1j * 2 * np.pi * net.f_hz * net.line["c_nf_per_km"] * 1e-9)
+            * net.line["length_km"]
+            * net.line["parallel"]
+            * z_base
         ).iloc[line_idx]
 
         Yff[line_idx] = y / 2 + 1 / z
@@ -90,23 +92,21 @@ def main():
         z_k = net.trafo["vk_percent"].iloc[trafo_idx] / 100
 
         r_k = net.trafo["vkr_percent"].iloc[trafo_idx] / 100
-        x_k = np.sqrt(z_k ** 2 - r_k ** 2)
+        x_k = np.sqrt(z_k**2 - r_k**2)
 
-        z_ref = (net.trafo["vn_lv_kv"]**2 / net.trafo["sn_mva"]).iloc[trafo_idx]
-        z_base = net.bus["vn_kv"].iloc[sub_to]**2 / baseMVA
+        z_ref = (net.trafo["vn_lv_kv"] ** 2 / net.trafo["sn_mva"]).iloc[trafo_idx]
+        z_base = net.bus["vn_kv"].iloc[sub_to] ** 2 / baseMVA
         z = (r_k + 1j * x_k) * z_ref / z_base
 
         y_m_mod = net.trafo["i0_percent"].iloc[trafo_idx] / 100
         g_m = net.trafo["pfe_kw"].iloc[trafo_idx] / net.trafo["sn_mva"].iloc[trafo_idx] / 1000
-        b_m = np.sqrt(y_m_mod ** 2 - g_m ** 2)
+        b_m = np.sqrt(y_m_mod**2 - g_m**2)
         y = (g_m - 1j * b_m) * z_base / z_ref
 
         assert net.trafo["tap_changer_type"].iloc[trafo_idx] in ["Ratio", None]
 
         tap_side = net.trafo["tap_side"].iloc[trafo_idx]
-        tap_changer_ratio = (
-                1 + (net.trafo["tap_pos"] - net.trafo["tap_neutral"]) * net.trafo["tap_step_percent"] / 100
-        )
+        tap_changer_ratio = 1 + (net.trafo["tap_pos"] - net.trafo["tap_neutral"]) * net.trafo["tap_step_percent"] / 100
         trafo_vn_lv_kv = net.trafo["vn_lv_kv"] * tap_changer_ratio if tap_side == "lv" else net.trafo["vn_lv_kv"]
         trafo_vn_hv_kv = net.trafo["vn_hv_kv"] * tap_changer_ratio if tap_side == "hv" else net.trafo["vn_hv_kv"]
 
@@ -114,7 +114,7 @@ def main():
         phase_shift = net.trafo["shift_degree"] * np.pi / 180  # rad
         n = (n_mod * np.exp(1j * phase_shift)).iloc[trafo_idx]
 
-        Yff[line_idx] = (0.5 * y * z + 1) / (n ** 2 * z * (0.25 * y * z + 1))
+        Yff[line_idx] = (0.5 * y * z + 1) / (n**2 * z * (0.25 * y * z + 1))
         Yft[line_idx] = -1 / (n * z * (0.25 * y * z + 1))
         Ytf[line_idx] = -1 / (n * z * (0.25 * y * z + 1))
         Ytt[line_idx] = (0.5 * y * z + 1) / (z * (0.25 * y * z + 1))
@@ -244,9 +244,8 @@ def main():
             Qt += Qt_line
 
         # NOTE: seems like shunt power doesn't go into this
-        P_balance = Pg_bus - Pl_bus + Psh - Pf  - Pt
+        P_balance = Pg_bus - Pl_bus + Psh - Pf - Pt
         Q_balance = Qg_bus - Ql_bus + Qsh - Qf - Qt
-
 
         p_balance_correct = np.abs(P_balance) < threshold
         q_balance_correct = np.abs(Q_balance) < threshold
