@@ -31,16 +31,7 @@ def get_bus_voltage(net, bus_id: int) -> tuple[float, float]:
     return Vm, theta
 
 
-def main():
-    threshold = 1e-4
-    # create an environment
-    # env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
-    # env_name = "l2rpn_icaps_2021_small"
-    env_name = "l2rpn_idf_2023"
-    env = grid2op.make(env_name)
-    obs = env.reset()
-
-    # TODO od ovoga da se napravi funkcija
+def validate_equations(env, obs, *, threshold: float = 1e-4, verbose: bool = True) -> None:
     net = env.backend._grid
 
     n_sub = env.n_sub
@@ -250,12 +241,25 @@ def main():
         p_balance_correct = np.abs(P_balance) < threshold
         q_balance_correct = np.abs(Q_balance) < threshold
 
-        print(f"{bus_id=}")
-        print(f"{P_balance=}")
-        print(f"{Q_balance=}")
+        if verbose:
+            print(f"{bus_id=}")
+            print(f"{P_balance=}")
+            print(f"{Q_balance=}")
 
         assert p_balance_correct
         assert q_balance_correct
+
+
+def main():
+    threshold = 1e-4
+    # create an environment
+    # env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
+    # env_name = "l2rpn_icaps_2021_small"
+    env_name = "l2rpn_idf_2023"
+    env = grid2op.make(env_name)
+    obs = env.reset()
+
+    validate_equations(env, obs, threshold=threshold)
 
 
 if __name__ == "__main__":
