@@ -128,13 +128,13 @@ def validate_equations(env, obs, *, threshold: float = 1e-4, verbose: bool = Tru
         P_load = obs.load_p[load_ids_at_sub] / baseMVA  # pu
         Q_load = obs.load_q[load_ids_at_sub] / baseMVA
 
-        shunt_ids_at_sub = np.argwhere(sub_id == env.shunt_to_subid).flatten()
+        shunt_ids_at_bus = np.argwhere(net.shunt["bus"] == bus_id).flatten()
         # https://pandapower.readthedocs.io/en/latest/elements/shunt.html
         g_sh = net.shunt["p_mw"] * net.shunt["step"] / baseMVA * net.shunt["in_service"]
         b_sh = net.shunt["q_mvar"] * net.shunt["step"] / baseMVA * net.shunt["in_service"]
         Vm, _ = get_bus_voltage(net, bus_id)
-        Psh = np.sum(Vm**2 * g_sh.iloc[shunt_ids_at_sub])
-        Qsh = np.sum(Vm**2 * (-b_sh.iloc[shunt_ids_at_sub]))
+        Psh = np.sum(Vm**2 * g_sh.iloc[shunt_ids_at_bus])
+        Qsh = np.sum(Vm**2 * (-b_sh.iloc[shunt_ids_at_bus]))
 
         if busbar == 1:
             Pg_bus = np.sum((1 - a_gen) * P_gen)
@@ -241,7 +241,6 @@ def validate_equations(env, obs, *, threshold: float = 1e-4, verbose: bool = Tru
         p_balance_correct = np.abs(P_balance) < threshold
         q_balance_correct = np.abs(Q_balance) < threshold
 
-        # TODO napisi testove, da l specificne situacije ili samo random? Ili kombinacija
         if verbose:
             print(f"{bus_id=}")
             print(f"{P_balance=}")
