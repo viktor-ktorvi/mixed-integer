@@ -21,6 +21,11 @@ def tolerance() -> float:
 
 
 @pytest.fixture
+def max_simulation_steps() -> int:
+    return 1000
+
+
+@pytest.fixture
 def case14_env(random_seed: int) -> Environment:
     env_name = "l2rpn_case14_sandbox"
     env = grid2op.make(env_name)
