@@ -180,7 +180,7 @@ def validate_equations(env, obs, *, threshold: float = 1e-4, verbose: bool = Tru
                 Qf_line = Vm_f*a_f*(Vm_f*a_f*(-Yff_i*np.sin(theta_f) + Yff_r*np.cos(theta_f))*np.sin(theta_f) + Vm_f*a_f*(-Yff_i*np.cos(theta_f) - Yff_r*np.sin(theta_f))*np.cos(theta_f) + (-Vm_t1*Yft_i*(1 - a_t)*np.sin(theta_t1) + Vm_t1*Yft_r*(1 - a_t)*np.cos(theta_t1) - Vm_t2*Yft_i*a_t*np.sin(theta_t2) + Vm_t2*Yft_r*a_t*np.cos(theta_t2))*np.sin(theta_f) + (-Vm_t1*Yft_i*(1 - a_t)*np.cos(theta_t1) - Vm_t1*Yft_r*(1 - a_t)*np.sin(theta_t1) - Vm_t2*Yft_i*a_t*np.cos(theta_t2) - Vm_t2*Yft_r*a_t*np.sin(theta_t2))*np.cos(theta_f))  # noqa: E226
             # fmt: on
 
-            if net.bus["in_service"].iloc[bus_id]:
+            if net.bus["in_service"].iloc[bus_id] and ((a_f == 0 and busbar == 1) or (a_f == 1 and busbar == 2)):
                 pf_correct = np.abs(Pf_line - obs.p_or[line_f_idx] / baseMVA) < threshold
                 qf_correct = np.abs(Qf_line - obs.q_or[line_f_idx] / baseMVA) < threshold
             else:
@@ -222,7 +222,7 @@ def validate_equations(env, obs, *, threshold: float = 1e-4, verbose: bool = Tru
                 Qt_line = Vm_t*a_t*(Vm_t*a_t*(-Ytt_i*np.sin(theta_t) + Ytt_r*np.cos(theta_t))*np.sin(theta_t) + Vm_t*a_t*(-Ytt_i*np.cos(theta_t) - Ytt_r*np.sin(theta_t))*np.cos(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*np.sin(theta_f1) + Vm_f1*Ytf_r*(1 - a_f)*np.cos(theta_f1) - Vm_f2*Ytf_i*a_f*np.sin(theta_f2) + Vm_f2*Ytf_r*a_f*np.cos(theta_f2))*np.sin(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*np.cos(theta_f1) - Vm_f1*Ytf_r*(1 - a_f)*np.sin(theta_f1) - Vm_f2*Ytf_i*a_f*np.cos(theta_f2) - Vm_f2*Ytf_r*a_f*np.sin(theta_f2))*np.cos(theta_t))  # noqa: E226
             # fmt: on
 
-            if net.bus["in_service"].iloc[bus_id]:
+            if net.bus["in_service"].iloc[bus_id] and ((a_t == 0 and busbar == 1) or (a_t == 1 and busbar == 2)):
                 pt_correct = np.abs(Pt_line - obs.p_ex[line_t_idx] / baseMVA) < threshold
                 qt_correct = np.abs(Qt_line - obs.q_ex[line_t_idx] / baseMVA) < threshold
             else:
@@ -241,6 +241,7 @@ def validate_equations(env, obs, *, threshold: float = 1e-4, verbose: bool = Tru
         p_balance_correct = np.abs(P_balance) < threshold
         q_balance_correct = np.abs(Q_balance) < threshold
 
+        # TODO napisi testove, da l specificne situacije ili samo random? Ili kombinacija
         if verbose:
             print(f"{bus_id=}")
             print(f"{P_balance=}")
