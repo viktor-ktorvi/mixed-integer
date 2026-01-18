@@ -18,6 +18,6 @@ from scripts.equations import validate_equations
         "case36_parallel_lines_one_connecting_to_bus_2",
     ],
 )
-def test_validate_equations(request, env_fixture_name):
+def test_validate_equations(request, env_fixture_name: str, tolerance: float):
     env = request.getfixturevalue(env_fixture_name)
-    validate_equations(env, env.current_obs, threshold=1e-4, verbose=False)
+    validate_equations(env, env.current_obs, threshold=tolerance, verbose=False)

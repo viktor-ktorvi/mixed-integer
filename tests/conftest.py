@@ -16,6 +16,11 @@ def random_seed() -> int:
 
 
 @pytest.fixture
+def tolerance() -> float:
+    return 1e-4
+
+
+@pytest.fixture
 def case14_env(random_seed: int) -> Environment:
     env_name = "l2rpn_case14_sandbox"
     env = grid2op.make(env_name)
