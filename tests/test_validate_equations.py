@@ -1,7 +1,7 @@
 import pytest
 from grid2op.Agent import DoNothingAgent, RandomAgent
 
-from scripts.equations import validate_equations
+from src.power_flow.validate_equations import validate_equations
 
 
 @pytest.mark.parametrize(
