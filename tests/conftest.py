@@ -22,7 +22,7 @@ def tolerance() -> float:
 
 @pytest.fixture
 def max_simulation_steps() -> int:
-    return 20
+    return 1000
 
 
 @pytest.fixture
