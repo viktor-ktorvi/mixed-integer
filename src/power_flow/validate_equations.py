@@ -1,4 +1,8 @@
 import numpy as np
+from grid2op import Observation
+from grid2op.Environment import Environment
+from numpy.typing import NDArray
+from pandapower import pandapowerNet
 
 
 def get_bus_busbar_number(bus_id: int, n_sub: int) -> int:
@@ -13,7 +17,7 @@ def get_buses_at_sub(sub_id: int, n_sub: int) -> list[int]:
     return [sub_id, sub_id + n_sub]
 
 
-def get_bus_voltage(net, bus_id: int) -> tuple[float, float]:
+def get_bus_voltage(net: pandapowerNet, bus_id: int) -> tuple[float, float]:
     Vm = net.res_bus["vm_pu"].iloc[bus_id]
     theta = net.res_bus["va_degree"].iloc[bus_id] * np.pi / 180
 
@@ -26,11 +30,8 @@ def get_bus_voltage(net, bus_id: int) -> tuple[float, float]:
     return Vm, theta
 
 
-def validate_equations(env, obs, *, threshold: float = 1e-4, verbose: bool = True) -> None:
-    net = env.backend._grid
-
-    n_sub = env.n_sub
-    n_line = env.n_line  # num actual lines + num trafos
+def calc_admittances(env: Environment, net: pandapowerNet) -> tuple[NDArray, NDArray, NDArray, NDArray]:
+    n_line = env.n_line
     n_actual_line = net.line.shape[0]
     n_trafo = net.trafo.shape[0]
 
@@ -104,6 +105,16 @@ def validate_equations(env, obs, *, threshold: float = 1e-4, verbose: bool = Tru
         Yft[line_idx] = -1 / (n * z * (0.25 * y * z + 1))
         Ytf[line_idx] = -1 / (n * z * (0.25 * y * z + 1))
         Ytt[line_idx] = (0.5 * y * z + 1) / (z * (0.25 * y * z + 1))
+
+    return Yff, Yft, Ytf, Ytt
+
+
+def validate_equations(env: Environment, obs: Observation, *, threshold: float = 1e-4, verbose: bool = True) -> None:
+    net = env.backend._grid
+
+    n_sub = env.n_sub
+    baseMVA = net.sn_mva  # todo nek bude samo net.sn_mva
+    Yff, Yft, Ytf, Ytt = calc_admittances(env, net)
 
     # NOTE
     # it is assumed that the first n_sub buses are busbar 1
