@@ -1,7 +1,0 @@
-# This file is for custom makefile variable at the project level.
-# They are meant to be share by the whole project team.
-
-APP_VERSION := 0.0.0
-APPLICATION_NAME := mixed_integer
-CONDA_ENVIRONMENT := mixed-integer-env
-PYTHON_VERSION := 3.11

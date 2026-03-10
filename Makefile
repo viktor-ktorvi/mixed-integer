@@ -10,8 +10,7 @@
 # files to include.
 ########################################################################################
 
-#Include base makefile
-include .make/base.make
+
 # Include custom targets and variables
 -include Makefile.targets
 -include Makefile.variables
