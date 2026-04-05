@@ -136,3 +136,8 @@ wrap-summaries = 120
 blank = false
 exclude = []
 recursive = true
+
+[tool.uv]
+override-dependencies = [
+  "matplotlib>=3.10"
+]
