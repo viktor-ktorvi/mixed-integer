@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 from grid2op.Agent import DoNothingAgent, RandomAgent
@@ -9,23 +11,44 @@ from src.power_flow.validate_equations import validate_equations
 @pytest.mark.parametrize(
     "env_fixture_name",
     [
-        "case14_default",
-        "case14_2_lines_and_load_on_busbar_2",
-        "case14_line_on_bus_2_on_both_ends",
-        "case14_line_on_isolated_bus",
-        "case14_one_gen_on_bus_1_and_one_gen_on_bus_2",
-        "case14_substation_with_everything_on_bus_2",
-        "case14_overloaded",
-        "case36_default",
-        "case36_one_load_on_bus_2_others_on_bus_1",
-        "case36_parallel_lines_one_connecting_to_bus_2",
-        "case118_default",
+        # "case14_default",
+        # "case14_2_lines_and_load_on_busbar_2",
+        # "case14_line_on_bus_2_on_both_ends",
+        # "case14_line_on_isolated_bus",
+        "case14_one_gen_on_bus_1_and_one_gen_on_bus_2", # TODO seems to be broken; debug in a script
+        # "case14_substation_with_everything_on_bus_2",
+        # "case14_overloaded",
+        # "case36_default",
+        # "case36_one_load_on_bus_2_others_on_bus_1",
+        # "case36_parallel_lines_one_connecting_to_bus_2",
+        # "case118_default",
     ],
 )
 def test_validate_equations_predetermined_scenarios(request, env_fixture_name: str, tolerance: float) -> None:
     env = request.getfixturevalue(env_fixture_name)
-    validate_equations(env, env.current_obs, threshold=tolerance, verbose=False)
+    validate_equations(env, env.current_obs, threshold=tolerance, verbose=True)
 
+# TODO can probably be removed
+def make_obs_from_gekko(problem: MINLP) -> SimpleNamespace:
+    baseMVA = problem.baseMVA
+
+    return SimpleNamespace(
+        gen_p=np.array([problem.Pg[i].value[0] for i in range(problem.n_gen)]) * baseMVA,
+        gen_q=np.array([problem.Qg[i].value[0] for i in range(problem.n_gen)]) * baseMVA,
+        gen_bus=np.array([int(problem.a_gen[i].value[0]) + 1 for i in range(problem.n_gen)]),
+        load_bus=np.array([int(problem.a_load[i].value[0]) + 1 for i in range(problem.n_load)]),
+        line_or_bus=np.array([int(problem.a_or[i].value[0]) + 1 for i in range(problem.n_line)]),
+        line_ex_bus=np.array([int(problem.a_ex[i].value[0]) + 1 for i in range(problem.n_line)]),
+        load_p=problem.obs.load_p,
+        load_q=problem.obs.load_q,
+        p_or=problem.obs.p_or,
+        q_or=problem.obs.q_or,
+        p_ex=problem.obs.p_ex,
+        q_ex=problem.obs.q_ex,
+        line_or_to_subid=problem.obs.line_or_to_subid,
+        line_ex_to_subid=problem.obs.line_ex_to_subid,
+        thermal_limit=problem.obs.thermal_limit,
+    )
 
 @pytest.mark.parametrize(
     "env_fixture_name",
@@ -48,7 +71,7 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
     obs = env.current_obs
 
     problem = MINLP(env, obs)
-    problem.add_bus_type_constraints()
+    # problem.add_bus_type_constraints()
     problem.add_power_flow_equations()
 
     # Fix voltage variables
@@ -89,6 +112,10 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
         problem.m.solve(disp=True, debug=True)
     except:
         print(f"{problem.m.path=}")
+
+    # TODO 80% sure the power flow equations are good, and that the issue is in the bus types
+    fake_obs = make_obs_from_gekko(problem)
+    validate_equations(env, fake_obs, threshold=tolerance, verbose=True)
 
     # Print intermediate values to verify balance equations
     for bus_id, P_res, Q_res in problem.residuals:

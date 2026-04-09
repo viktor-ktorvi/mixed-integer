@@ -168,12 +168,6 @@ class MINLP:
             Psh = self.m.Intermediate(self.m.sum([self.Vm[bus_id] ** 2 * g_sh[s] for s in shunt_ids]))
             Qsh = self.m.Intermediate(self.m.sum([self.Vm[bus_id] ** 2 * (-b_sh[s]) for s in shunt_ids]))
 
-            # ── Helper intermediates for bus_id ───────────────────────────────────
-            Vm_f = self.Vm[bus_id]
-            th_f = self.theta[bus_id]
-            cos_f = self.m.Intermediate(self.m.cos(th_f))
-            sin_f = self.m.Intermediate(self.m.sin(th_f))
-
             # ── Lines (from side) ─────────────────────────────────────────────────
             Pf_total = 0
             Qf_total = 0
@@ -190,61 +184,42 @@ class MINLP:
 
                 a_f = self.a_or[line_idx]
                 a_t = self.a_ex[line_idx]
-                af = self.m.Intermediate(a_f if busbar == 2 else (1 - a_f))  # weight for this busbar
 
-                # Voltages at the two possible "to" buses
-                Vm_t1, th_t1 = self.Vm[to_buses[0]], self.theta[to_buses[0]]
-                Vm_t2, th_t2 = self.Vm[to_buses[1]], self.theta[to_buses[1]]
+                Vm_f = self.Vm[bus_id]
+                theta_f = self.theta[bus_id]
 
-                cos_t1 = self.m.Intermediate(self.m.cos(th_t1))
-                sin_t1 = self.m.Intermediate(self.m.sin(th_t1))
-                cos_t2 = self.m.Intermediate(self.m.cos(th_t2))
-                sin_t2 = self.m.Intermediate(self.m.sin(th_t2))
+                Vm_t1 = self.Vm[to_buses[0]]
+                theta_t1 = self.theta[to_buses[0]]
 
-                # "From" self term:  Yff * Vf^2  (real and imag parts of current)
-                Iself_r = self.m.Intermediate(Yff_r * cos_f - Yff_i * sin_f)  # Re(Yff * e^{j*th_f})
-                Iself_i = self.m.Intermediate(Yff_r * sin_f + Yff_i * cos_f)  # Im(Yff * e^{j*th_f})
+                Vm_t2 = self.Vm[to_buses[1]]
+                theta_t2 = self.theta[to_buses[1]]
 
-                # "To" mutual term:  Yft * Vt  (weighted sum over both busbars)
-                Imut_r = self.m.Intermediate(
-                    Yft_r * (Vm_t1 * (1 - a_t) * cos_t1 + Vm_t2 * a_t * cos_t2)
-                    - Yft_i * (Vm_t1 * (1 - a_t) * sin_t1 + Vm_t2 * a_t * sin_t2)
-                )
-                Imut_i = self.m.Intermediate(
-                    Yft_r * (Vm_t1 * (1 - a_t) * sin_t1 + Vm_t2 * a_t * sin_t2)
-                    + Yft_i * (Vm_t1 * (1 - a_t) * cos_t1 + Vm_t2 * a_t * cos_t2)
-                )
-
-                # S = Vf * conj(I);  P = Re(S), Q = Im(S)
-                #   I_total = (Iself_r + Imut_r) + j*(Iself_i + Imut_i)
-                #   Vf = Vm_f*(cos_f + j*sin_f)
-                #   P  = Vm_f * [cos_f*(Iself_r+Imut_r) + sin_f*(Iself_i+Imut_i)]   <- conj flips Im
-                #   Q  = Vm_f * [sin_f*(Iself_r+Imut_r) - cos_f*(Iself_i+Imut_i)]
-
-                Vf_weighted = self.m.Intermediate(Vm_f * af)  # zero-out if wrong busbar
-
-                If_total_r = Vm_f * af * Iself_r + Imut_r
-                If_total_i = Vm_f * af * Iself_i + Imut_i
-                Pf_line = self.m.Intermediate(Vf_weighted * (cos_f * If_total_r + sin_f * If_total_i))
-                Qf_line = self.m.Intermediate(Vf_weighted * (sin_f * If_total_r - cos_f * If_total_i))
+                # fmt: off
+                if busbar == 1:
+                    Pf_line = Vm_f*(1 - a_f)*(Vm_f*(1 - a_f)*(-Yff_i*self.m.sin(theta_f) + Yff_r*self.m.cos(theta_f))*self.m.cos(theta_f) - Vm_f*(1 - a_f)*(-Yff_i*self.m.cos(theta_f) - Yff_r*self.m.sin(theta_f))*self.m.sin(theta_f) + (-Vm_t1*Yft_i*(1 - a_t)*self.m.sin(theta_t1) + Vm_t1*Yft_r*(1 - a_t)*self.m.cos(theta_t1) - Vm_t2*Yft_i*a_t*self.m.sin(theta_t2) + Vm_t2*Yft_r*a_t*self.m.cos(theta_t2))*self.m.cos(theta_f) - (-Vm_t1*Yft_i*(1 - a_t)*self.m.cos(theta_t1) - Vm_t1*Yft_r*(1 - a_t)*self.m.sin(theta_t1) - Vm_t2*Yft_i*a_t*self.m.cos(theta_t2) - Vm_t2*Yft_r*a_t*self.m.sin(theta_t2))*self.m.sin(theta_f))  # noqa: E226
+                    Qf_line = Vm_f*(1 - a_f)*(Vm_f*(1 - a_f)*(-Yff_i*self.m.sin(theta_f) + Yff_r*self.m.cos(theta_f))*self.m.sin(theta_f) + Vm_f*(1 - a_f)*(-Yff_i*self.m.cos(theta_f) - Yff_r*self.m.sin(theta_f))*self.m.cos(theta_f) + (-Vm_t1*Yft_i*(1 - a_t)*self.m.sin(theta_t1) + Vm_t1*Yft_r*(1 - a_t)*self.m.cos(theta_t1) - Vm_t2*Yft_i*a_t*self.m.sin(theta_t2) + Vm_t2*Yft_r*a_t*self.m.cos(theta_t2))*self.m.sin(theta_f) + (-Vm_t1*Yft_i*(1 - a_t)*self.m.cos(theta_t1) - Vm_t1*Yft_r*(1 - a_t)*self.m.sin(theta_t1) - Vm_t2*Yft_i*a_t*self.m.cos(theta_t2) - Vm_t2*Yft_r*a_t*self.m.sin(theta_t2))*self.m.cos(theta_f))  # noqa: E226
+                else:
+                    Pf_line = Vm_f*a_f*(Vm_f*a_f*(-Yff_i*self.m.sin(theta_f) + Yff_r*self.m.cos(theta_f))*self.m.cos(theta_f) - Vm_f*a_f*(-Yff_i*self.m.cos(theta_f) - Yff_r*self.m.sin(theta_f))*self.m.sin(theta_f) + (-Vm_t1*Yft_i*(1 - a_t)*self.m.sin(theta_t1) + Vm_t1*Yft_r*(1 - a_t)*self.m.cos(theta_t1) - Vm_t2*Yft_i*a_t*self.m.sin(theta_t2) + Vm_t2*Yft_r*a_t*self.m.cos(theta_t2))*self.m.cos(theta_f) - (-Vm_t1*Yft_i*(1 - a_t)*self.m.cos(theta_t1) - Vm_t1*Yft_r*(1 - a_t)*self.m.sin(theta_t1) - Vm_t2*Yft_i*a_t*self.m.cos(theta_t2) - Vm_t2*Yft_r*a_t*self.m.sin(theta_t2))*self.m.sin(theta_f))  # noqa: E226
+                    Qf_line = Vm_f*a_f*(Vm_f*a_f*(-Yff_i*self.m.sin(theta_f) + Yff_r*self.m.cos(theta_f))*self.m.sin(theta_f) + Vm_f*a_f*(-Yff_i*self.m.cos(theta_f) - Yff_r*self.m.sin(theta_f))*self.m.cos(theta_f) + (-Vm_t1*Yft_i*(1 - a_t)*self.m.sin(theta_t1) + Vm_t1*Yft_r*(1 - a_t)*self.m.cos(theta_t1) - Vm_t2*Yft_i*a_t*self.m.sin(theta_t2) + Vm_t2*Yft_r*a_t*self.m.cos(theta_t2))*self.m.sin(theta_f) + (-Vm_t1*Yft_i*(1 - a_t)*self.m.cos(theta_t1) - Vm_t1*Yft_r*(1 - a_t)*self.m.sin(theta_t1) - Vm_t2*Yft_i*a_t*self.m.cos(theta_t2) - Vm_t2*Yft_r*a_t*self.m.sin(theta_t2))*self.m.cos(theta_f))  # noqa: E226
+                # fmt: on
 
                 Pf_total = Pf_total + Pf_line
                 Qf_total = Qf_total + Qf_line
 
-                if line_idx not in self.line_f_indices:
-                    self.line_f_indices.add(line_idx)
-                    If_total_abs_pu = self.m.Intermediate(self.m.sqrt(If_total_r**2 + If_total_i**2))  # pu
-
-                    # TODO ovo je mogla biti i zasebna funkcija ali neka
-
-                    # TODO sta ako je trenutna sabirnica neaktivna? da li cu moci da procitam
-                    #  ako ne, onda cu morati da procitam sa druge sabirnice
-                    vn_bus_kv = self.net.bus.loc[bus_id].vn_kv
-                    If_base_A = (self.baseMVA / (np.sqrt(3) * vn_bus_kv)) * 1000
-                    If_limit_pu = self.obs.thermal_limit[line_idx] / If_base_A
-                    utilization = self.m.Intermediate(If_total_abs_pu / If_limit_pu)
-                    self.utilizations.append(utilization)
-                    self.m.Equation(utilization < 1.0)
+                # if line_idx not in self.line_f_indices:
+                #     self.line_f_indices.add(line_idx)
+                #     If_total_abs_pu = self.m.Intermediate(self.m.sqrt(If_total_r**2 + If_total_i**2))  # pu
+                #
+                #     # TODO ovo je mogla biti i zasebna funkcija ali neka
+                #
+                #     # TODO sta ako je trenutna sabirnica neaktivna? da li cu moci da procitam
+                #     #  ako ne, onda cu morati da procitam sa druge sabirnice
+                #     vn_bus_kv = self.net.bus.loc[bus_id].vn_kv
+                #     If_base_A = (self.baseMVA / (np.sqrt(3) * vn_bus_kv)) * 1000
+                #     If_limit_pu = self.obs.thermal_limit[line_idx] / If_base_A
+                #     utilization = self.m.Intermediate(If_total_abs_pu / If_limit_pu)
+                #     self.utilizations.append(utilization)
+                #     self.m.Equation(utilization < 1.0)
 
             # ── Lines (to side) ───────────────────────────────────────────────────
             Pt_total = 0
@@ -262,38 +237,28 @@ class MINLP:
 
                 a_t = self.a_ex[line_idx]
                 a_f = self.a_or[line_idx]
-                at = self.m.Intermediate(a_t if busbar == 2 else (1 - a_t))
 
-                Vm_f1, th_f1 = self.Vm[from_buses[0]], self.theta[from_buses[0]]
-                Vm_f2, th_f2 = self.Vm[from_buses[1]], self.theta[from_buses[1]]
 
-                cos_f1 = self.m.Intermediate(self.m.cos(th_f1))
-                sin_f1 = self.m.Intermediate(self.m.sin(th_f1))
-                cos_f2 = self.m.Intermediate(self.m.cos(th_f2))
-                sin_f2 = self.m.Intermediate(self.m.sin(th_f2))
+                Vm_t = self.Vm[bus_id]
+                theta_t = self.theta[bus_id]
 
-                # "To" self term
-                Iself_r = self.m.Intermediate(Ytt_r * cos_f - Ytt_i * sin_f)
-                Iself_i = self.m.Intermediate(Ytt_r * sin_f + Ytt_i * cos_f)
+                Vm_f1 = self.Vm[from_buses[0]]
+                theta_f1 = self.theta[from_buses[0]]
 
-                # "From" mutual term
-                Imut_r = self.m.Intermediate(
-                    Ytf_r * (Vm_f1 * (1 - a_f) * cos_f1 + Vm_f2 * a_f * cos_f2)
-                    - Ytf_i * (Vm_f1 * (1 - a_f) * sin_f1 + Vm_f2 * a_f * sin_f2)
-                )
-                Imut_i = self.m.Intermediate(
-                    Ytf_r * (Vm_f1 * (1 - a_f) * sin_f1 + Vm_f2 * a_f * sin_f2)
-                    + Ytf_i * (Vm_f1 * (1 - a_f) * cos_f1 + Vm_f2 * a_f * cos_f2)
-                )
+                Vm_f2 = self.Vm[from_buses[1]]
+                theta_f2 = self.theta[from_buses[1]]
 
-                Vt_weighted = self.m.Intermediate(Vm_f * at)
 
-                Pt_line = self.m.Intermediate(
-                    Vt_weighted * (cos_f * (Vm_f * at * Iself_r + Imut_r) + sin_f * (Vm_f * at * Iself_i + Imut_i))
-                )
-                Qt_line = self.m.Intermediate(
-                    Vt_weighted * (sin_f * (Vm_f * at * Iself_r + Imut_r) - cos_f * (Vm_f * at * Iself_i + Imut_i))
-                )
+                # TODO get variables
+                #  replace np. with self.m.
+                # fmt: off
+                if busbar == 1:
+                    Pt_line = Vm_t*(1 - a_t)*(Vm_t*(1 - a_t)*(-Ytt_i*self.m.sin(theta_t) + Ytt_r*self.m.cos(theta_t))*self.m.cos(theta_t) - Vm_t*(1 - a_t)*(-Ytt_i*self.m.cos(theta_t) - Ytt_r*self.m.sin(theta_t))*self.m.sin(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*self.m.sin(theta_f1) + Vm_f1*Ytf_r*(1 - a_f)*self.m.cos(theta_f1) - Vm_f2*Ytf_i*a_f*self.m.sin(theta_f2) + Vm_f2*Ytf_r*a_f*self.m.cos(theta_f2))*self.m.cos(theta_t) - (-Vm_f1*Ytf_i*(1 - a_f)*self.m.cos(theta_f1) - Vm_f1*Ytf_r*(1 - a_f)*self.m.sin(theta_f1) - Vm_f2*Ytf_i*a_f*self.m.cos(theta_f2) - Vm_f2*Ytf_r*a_f*self.m.sin(theta_f2))*self.m.sin(theta_t))  # noqa: E226
+                    Qt_line = Vm_t*(1 - a_t)*(Vm_t*(1 - a_t)*(-Ytt_i*self.m.sin(theta_t) + Ytt_r*self.m.cos(theta_t))*self.m.sin(theta_t) + Vm_t*(1 - a_t)*(-Ytt_i*self.m.cos(theta_t) - Ytt_r*self.m.sin(theta_t))*self.m.cos(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*self.m.sin(theta_f1) + Vm_f1*Ytf_r*(1 - a_f)*self.m.cos(theta_f1) - Vm_f2*Ytf_i*a_f*self.m.sin(theta_f2) + Vm_f2*Ytf_r*a_f*self.m.cos(theta_f2))*self.m.sin(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*self.m.cos(theta_f1) - Vm_f1*Ytf_r*(1 - a_f)*self.m.sin(theta_f1) - Vm_f2*Ytf_i*a_f*self.m.cos(theta_f2) - Vm_f2*Ytf_r*a_f*self.m.sin(theta_f2))*self.m.cos(theta_t))  # noqa: E226
+                else:
+                    Pt_line = Vm_t*a_t*(Vm_t*a_t*(-Ytt_i*self.m.sin(theta_t) + Ytt_r*self.m.cos(theta_t))*self.m.cos(theta_t) - Vm_t*a_t*(-Ytt_i*self.m.cos(theta_t) - Ytt_r*self.m.sin(theta_t))*self.m.sin(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*self.m.sin(theta_f1) + Vm_f1*Ytf_r*(1 - a_f)*self.m.cos(theta_f1) - Vm_f2*Ytf_i*a_f*self.m.sin(theta_f2) + Vm_f2*Ytf_r*a_f*self.m.cos(theta_f2))*self.m.cos(theta_t) - (-Vm_f1*Ytf_i*(1 - a_f)*self.m.cos(theta_f1) - Vm_f1*Ytf_r*(1 - a_f)*self.m.sin(theta_f1) - Vm_f2*Ytf_i*a_f*self.m.cos(theta_f2) - Vm_f2*Ytf_r*a_f*self.m.sin(theta_f2))*self.m.sin(theta_t))  # noqa: E226
+                    Qt_line = Vm_t*a_t*(Vm_t*a_t*(-Ytt_i*self.m.sin(theta_t) + Ytt_r*self.m.cos(theta_t))*self.m.sin(theta_t) + Vm_t*a_t*(-Ytt_i*self.m.cos(theta_t) - Ytt_r*self.m.sin(theta_t))*self.m.cos(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*self.m.sin(theta_f1) + Vm_f1*Ytf_r*(1 - a_f)*self.m.cos(theta_f1) - Vm_f2*Ytf_i*a_f*self.m.sin(theta_f2) + Vm_f2*Ytf_r*a_f*self.m.cos(theta_f2))*self.m.sin(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*self.m.cos(theta_f1) - Vm_f1*Ytf_r*(1 - a_f)*self.m.sin(theta_f1) - Vm_f2*Ytf_i*a_f*self.m.cos(theta_f2) - Vm_f2*Ytf_r*a_f*self.m.sin(theta_f2))*self.m.cos(theta_t))  # noqa: E226
+                # fmt: on
 
                 Pt_total = Pt_total + Pt_line
                 Qt_total = Qt_total + Qt_line
@@ -307,9 +272,9 @@ class MINLP:
 
 
 def main() -> None:
-    # env_name = "l2rpn_case14_sandbox"
+    env_name = "l2rpn_case14_sandbox"
     # env_name = "l2rpn_icaps_2021_small"
-    env_name = "l2rpn_idf_2023"
+    # env_name = "l2rpn_idf_2023"
     env = grid2op.make(env_name)
     obs = env.reset()
 
