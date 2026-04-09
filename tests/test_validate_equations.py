@@ -1,6 +1,8 @@
+import numpy as np
 import pytest
 from grid2op.Agent import DoNothingAgent, RandomAgent
 
+from scripts.minlp import MINLP, fix
 from src.power_flow.validate_equations import validate_equations
 
 
@@ -23,6 +25,75 @@ from src.power_flow.validate_equations import validate_equations
 def test_validate_equations_predetermined_scenarios(request, env_fixture_name: str, tolerance: float) -> None:
     env = request.getfixturevalue(env_fixture_name)
     validate_equations(env, env.current_obs, threshold=tolerance, verbose=False)
+
+
+@pytest.mark.parametrize(
+    "env_fixture_name",
+    [
+        "case14_default",
+        "case14_2_lines_and_load_on_busbar_2",
+        "case14_line_on_bus_2_on_both_ends",
+        "case14_line_on_isolated_bus",
+        "case14_one_gen_on_bus_1_and_one_gen_on_bus_2",
+        "case14_substation_with_everything_on_bus_2",
+        "case14_overloaded",
+        "case36_default",
+        "case36_one_load_on_bus_2_others_on_bus_1",
+        "case36_parallel_lines_one_connecting_to_bus_2",
+        # "case118_default",
+    ],
+)
+def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_name: str, tolerance: float) -> None:
+    env = request.getfixturevalue(env_fixture_name)
+    obs = env.current_obs
+
+    problem = MINLP(env, obs)
+    problem.add_bus_type_constraints()
+    problem.add_power_flow_equations()
+
+    # Fix voltage variables
+    for i in range(problem.n_bus):
+        if np.isnan(problem.net.res_bus.vm_pu[i]):
+            # Mirror from the corresponding busbar 1
+            if i >= problem.n_sub:
+                busbar1_id = i - problem.n_sub  # since busbar 2 = busbar 1 index + n_sub
+            else:
+                busbar1_id = i + problem.n_sub
+            fix(problem.Vm[i], problem.net.res_bus.vm_pu[busbar1_id])
+            fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[busbar1_id]))
+        else:
+            fix(problem.Vm[i], problem.net.res_bus.vm_pu[i])
+            fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[i]))
+
+    for i in range(problem.n_gen):
+        fix(problem.Pg[i], problem.net.res_gen.p_mw[i] / problem.baseMVA)
+        fix(problem.Qg[i], problem.net.res_gen.q_mvar[i] / problem.baseMVA)
+
+    # Fix binary switching variables
+    for i in range(problem.n_gen):
+        fix(problem.a_gen[i], obs.gen_bus[i] - 1)
+
+    for i in range(problem.n_load):
+        fix(problem.a_load[i], obs.load_bus[i] - 1)
+
+    for i in range(problem.n_line):
+        fix(problem.a_or[i], obs.line_or_bus[i] - 1)
+        fix(problem.a_ex[i], obs.line_ex_bus[i] - 1)
+
+    problem.m.options.SOLVER = 1  # APOPT (needed for integer vars)
+    problem.m.options.IMODE = 3  # steady-state optimization
+    problem.m.options.COLDSTART = 0
+    problem.m.Minimize(0)  # no objective, just check constraints
+
+    try:
+        problem.m.solve(disp=True, debug=True)
+    except:
+        print(f"{problem.m.path=}")
+
+    # Print intermediate values to verify balance equations
+    for bus_id, P_res, Q_res in problem.residuals:
+        assert P_res.value[0] < tolerance
+        assert Q_res.value[0] < tolerance
 
 
 @pytest.mark.parametrize(

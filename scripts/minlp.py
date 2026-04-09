@@ -25,6 +25,12 @@ def get_grid_sizes(env: Environment) -> tuple[int, int, int, int, int]:
     return n_sub, n_bus, n_gen, n_load, n_line
 
 
+def fix(var, value):
+    var.value = value
+    var.LOWER = value
+    var.UPPER = value
+
+
 class MINLP:
     def __init__(self, env: Environment, obs: Observation) -> None:
         self.env = env
@@ -97,7 +103,8 @@ class MINLP:
                 # bus is either PV or PQ based on if there are any generators connected to it
 
                 # fix all the generator active powers, because they're gonna be attached to PV buses anyhow
-                self.m.fix(self.Pg[gen_ids], val=self.net.res_gen.p_mw[gen_ids] / self.baseMVA)
+                for g in gen_ids:
+                    fix(self.Pg[g], self.net.res_gen.p_mw[g] / self.baseMVA)
 
                 # Qg remains free
                 # theta remains free
@@ -300,9 +307,9 @@ class MINLP:
 
 
 def main() -> None:
-    env_name = "l2rpn_case14_sandbox"
+    # env_name = "l2rpn_case14_sandbox"
     # env_name = "l2rpn_icaps_2021_small"
-    # env_name = "l2rpn_idf_2023"
+    env_name = "l2rpn_idf_2023"
     env = grid2op.make(env_name)
     obs = env.reset()
 
@@ -320,49 +327,44 @@ def main() -> None:
     # TODO finally, run an episode while solving the problem
     #  check if the line utilizations are really bellow the threshold
 
-    # def fix(var, value):
-    #     problem.m.fix(var, val=value)
-    #
-    # # Fix voltage variables
-    # for i in range(problem.n_bus):
-    #     if np.isnan(net.res_bus.vm_pu[i]):
-    #         # Mirror from the corresponding busbar 1
-    #         busbar1_id = i - n_sub  # since busbar 2 = busbar 1 index + n_sub
-    #         fix(Vm[i], net.res_bus.vm_pu[busbar1_id])
-    #         fix(theta[i], np.deg2rad(net.res_bus.va_degree[busbar1_id]))
-    #     else:
-    #         fix(Vm[i], net.res_bus.vm_pu[i])
-    #         fix(theta[i], np.deg2rad(net.res_bus.va_degree[i]))
-    #
-    # for i in range(n_gen):
-    #     fix(Pg[i], net.res_gen.p_mw[i] / baseMVA)
-    #     fix(Qg[i], net.res_gen.q_mvar[i] / baseMVA)
-    #
-    # # Fix binary switching variables
-    # for i in range(n_gen):
-    #     fix(a_gen[i], obs.gen_bus[i] - 1)
-    #
-    # for i in range(n_load):
-    #     fix(a_load[i], obs.load_bus[i] - 1)
-    #
-    # for i in range(n_line):
-    #     fix(a_or[i], obs.line_or_bus[i] - 1)
-    #     fix(a_ex[i], obs.line_ex_bus[i] - 1)
-    #
-    # # After fixing, print how many are actually fixed
-    # fixed = sum(1 for i in range(n_bus) if Vm[i].LOWER == Vm[i].UPPER)
-    # print(f"Fixed Vm: {fixed} / {n_bus}")
-    #
-    # m.options.SOLVER = 1  # APOPT (needed for integer vars)
-    # m.options.IMODE = 3  # steady-state optimization
-    #
-    # m.Minimize(0)  # no objective, just check constraints
-    # m.solve(disp=True)
+    # Fix voltage variables
+    for i in range(problem.n_bus):
+        if np.isnan(problem.net.res_bus.vm_pu[i]):
+            # Mirror from the corresponding busbar 1
+            busbar1_id = i - problem.n_sub  # since busbar 2 = busbar 1 index + n_sub
+            fix(problem.Vm[i], problem.net.res_bus.vm_pu[busbar1_id])
+            fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[busbar1_id]))
+        else:
+            fix(problem.Vm[i], problem.net.res_bus.vm_pu[i])
+            fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[i]))
 
-    # # Print intermediate values to verify balance equations
-    # print("Checking power balance residuals...")
-    # for bus_id, P_res, Q_res in residuals:
-    #     print(f"bus {bus_id}: P_res={P_res.value[0]:.6f}, Q_res={Q_res.value[0]:.6f}")
+    for i in range(problem.n_gen):
+        fix(problem.Pg[i], problem.net.res_gen.p_mw[i] / problem.baseMVA)
+        fix(problem.Qg[i], problem.net.res_gen.q_mvar[i] / problem.baseMVA)
+
+    # Fix binary switching variables
+    for i in range(problem.n_gen):
+        fix(problem.a_gen[i], obs.gen_bus[i] - 1)
+
+    for i in range(problem.n_load):
+        fix(problem.a_load[i], obs.load_bus[i] - 1)
+
+    for i in range(problem.n_line):
+        fix(problem.a_or[i], obs.line_or_bus[i] - 1)
+        fix(problem.a_ex[i], obs.line_ex_bus[i] - 1)
+
+    problem.m.options.SOLVER = 1  # APOPT (needed for integer vars)
+    problem.m.options.IMODE = 3  # steady-state optimization
+
+    problem.m.Minimize(0)  # no objective, just check constraints
+    problem.m.solve(disp=True)
+
+    # Print intermediate values to verify balance equations
+    print("Checking power balance residuals...")
+    for bus_id, P_res, Q_res in problem.residuals:
+        print(f"bus {bus_id}: P_res={P_res.value[0]:.6f}, Q_res={Q_res.value[0]:.6f}")
+        assert P_res.value[0] < 1e-6
+        assert Q_res.value[0] < 1e-6
 
 
 if __name__ == "__main__":
