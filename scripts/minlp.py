@@ -54,6 +54,8 @@ class MINLP:
         self.Yff, self.Yft, self.Ytf, self.Ytt = calc_admittances(self.env, self.net)
 
         self.residuals = []
+        self.line_f_indices = set()
+        self.utilizations = []
 
     def add_bus_type_constraints(self):
         for bus_id in range(self.n_bus):
@@ -222,6 +224,21 @@ class MINLP:
                 Pf_total = Pf_total + Pf_line
                 Qf_total = Qf_total + Qf_line
 
+                if line_idx not in self.line_f_indices:
+                    self.line_f_indices.add(line_idx)
+                    If_total_abs_pu = self.m.Intermediate(self.m.sqrt(If_total_r**2 + If_total_i**2))  # pu
+
+                    # TODO ovo je mogla biti i zasebna funkcija ali neka
+
+                    # TODO sta ako je trenutna sabirnica neaktivna? da li cu moci da procitam
+                    #  ako ne, onda cu morati da procitam sa druge sabirnice
+                    vn_bus_kv = self.net.bus.loc[bus_id].vn_kv
+                    If_base_A = (self.baseMVA / (np.sqrt(3) * vn_bus_kv)) * 1000
+                    If_limit_pu = self.obs.thermal_limit[line_idx] / If_base_A
+                    utilization = self.m.Intermediate(If_total_abs_pu / If_limit_pu)
+                    self.utilizations.append(utilization)
+                    self.m.Equation(utilization < 1.0)
+
             # ── Lines (to side) ───────────────────────────────────────────────────
             Pt_total = 0
             Qt_total = 0
@@ -304,12 +321,10 @@ def main() -> None:
     #  check if the line utilizations are really bellow the threshold
 
     # def fix(var, value):
-    #     var.value = value
-    #     var.LOWER = value
-    #     var.UPPER = value
+    #     problem.m.fix(var, val=value)
     #
     # # Fix voltage variables
-    # for i in range(n_bus):
+    # for i in range(problem.n_bus):
     #     if np.isnan(net.res_bus.vm_pu[i]):
     #         # Mirror from the corresponding busbar 1
     #         busbar1_id = i - n_sub  # since busbar 2 = busbar 1 index + n_sub
@@ -343,9 +358,7 @@ def main() -> None:
     #
     # m.Minimize(0)  # no objective, just check constraints
     # m.solve(disp=True)
-    #
-    #
-    #
+
     # # Print intermediate values to verify balance equations
     # print("Checking power balance residuals...")
     # for bus_id, P_res, Q_res in residuals:
