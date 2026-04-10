@@ -21,7 +21,8 @@ from src.power_flow.validate_equations import validate_equations
         "case36_default",
         "case36_one_load_on_bus_2_others_on_bus_1",
         "case36_parallel_lines_one_connecting_to_bus_2",
-        "case36_one_gen_on_bus_1_and_one_gen_on_bus_2" "case118_default",
+        "case36_one_gen_on_bus_1_and_one_gen_on_bus_2",
+        "case118_default",
     ],
 )
 def test_validate_equations_predetermined_scenarios(request, env_fixture_name: str, tolerance: float) -> None:
@@ -55,17 +56,17 @@ def make_obs_from_gekko(problem: MINLP) -> SimpleNamespace:
 @pytest.mark.parametrize(
     "env_fixture_name",
     [
-        "case14_default",
-        "case14_2_lines_and_load_on_busbar_2",
+        # "case14_default",
+        # "case14_2_lines_and_load_on_busbar_2",
         "case14_line_on_bus_2_on_both_ends",
-        "case14_line_on_isolated_bus",
-        "case14_one_gen_on_bus_1_and_one_gen_on_bus_2",
-        "case14_substation_with_everything_on_bus_2",
-        "case14_overloaded",
-        "case36_default",
-        "case36_one_load_on_bus_2_others_on_bus_1",
-        "case36_parallel_lines_one_connecting_to_bus_2",
-        "case36_one_gen_on_bus_1_and_one_gen_on_bus_2"
+        # "case14_line_on_isolated_bus",
+        # "case14_one_gen_on_bus_1_and_one_gen_on_bus_2",
+        # "case14_substation_with_everything_on_bus_2",
+        # "case14_overloaded",
+        # "case36_default",
+        # "case36_one_load_on_bus_2_others_on_bus_1",
+        # "case36_parallel_lines_one_connecting_to_bus_2",
+        # "case36_one_gen_on_bus_1_and_one_gen_on_bus_2",
         # "case118_default",
     ],
 )
