@@ -40,6 +40,7 @@ class MINLP:
 
         self.n_sub, self.n_bus, self.n_gen, self.n_load, self.n_line = get_grid_sizes(env)
 
+        # TODO navodno ako ovo m.Var zamenim sa m.Param, onda mogu da debagujem sta se desava iznutra
         self.Vm = self.m.Array(self.m.Var, self.n_bus, lb=0, value=1)
         self.theta = self.m.Array(self.m.Var, self.n_bus, lb=-np.pi, ub=np.pi)
 
@@ -238,7 +239,6 @@ class MINLP:
                 a_t = self.a_ex[line_idx]
                 a_f = self.a_or[line_idx]
 
-
                 Vm_t = self.Vm[bus_id]
                 theta_t = self.theta[bus_id]
 
@@ -247,7 +247,6 @@ class MINLP:
 
                 Vm_f2 = self.Vm[from_buses[1]]
                 theta_f2 = self.theta[from_buses[1]]
-
 
                 # TODO get variables
                 #  replace np. with self.m.

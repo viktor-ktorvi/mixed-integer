@@ -11,22 +11,23 @@ from src.power_flow.validate_equations import validate_equations
 @pytest.mark.parametrize(
     "env_fixture_name",
     [
-        # "case14_default",
-        # "case14_2_lines_and_load_on_busbar_2",
-        # "case14_line_on_bus_2_on_both_ends",
-        # "case14_line_on_isolated_bus",
-        "case14_one_gen_on_bus_1_and_one_gen_on_bus_2", # TODO seems to be broken; debug in a script
-        # "case14_substation_with_everything_on_bus_2",
-        # "case14_overloaded",
-        # "case36_default",
-        # "case36_one_load_on_bus_2_others_on_bus_1",
-        # "case36_parallel_lines_one_connecting_to_bus_2",
-        # "case118_default",
+        "case14_default",
+        "case14_2_lines_and_load_on_busbar_2",
+        "case14_line_on_bus_2_on_both_ends",
+        "case14_line_on_isolated_bus",
+        "case14_one_gen_on_bus_1_and_one_gen_on_bus_2",
+        "case14_substation_with_everything_on_bus_2",
+        "case14_overloaded",
+        "case36_default",
+        "case36_one_load_on_bus_2_others_on_bus_1",
+        "case36_parallel_lines_one_connecting_to_bus_2",
+        "case36_one_gen_on_bus_1_and_one_gen_on_bus_2" "case118_default",
     ],
 )
 def test_validate_equations_predetermined_scenarios(request, env_fixture_name: str, tolerance: float) -> None:
     env = request.getfixturevalue(env_fixture_name)
     validate_equations(env, env.current_obs, threshold=tolerance, verbose=True)
+
 
 # TODO can probably be removed
 def make_obs_from_gekko(problem: MINLP) -> SimpleNamespace:
@@ -50,6 +51,7 @@ def make_obs_from_gekko(problem: MINLP) -> SimpleNamespace:
         thermal_limit=problem.obs.thermal_limit,
     )
 
+
 @pytest.mark.parametrize(
     "env_fixture_name",
     [
@@ -63,6 +65,7 @@ def make_obs_from_gekko(problem: MINLP) -> SimpleNamespace:
         "case36_default",
         "case36_one_load_on_bus_2_others_on_bus_1",
         "case36_parallel_lines_one_connecting_to_bus_2",
+        "case36_one_gen_on_bus_1_and_one_gen_on_bus_2"
         # "case118_default",
     ],
 )
@@ -71,7 +74,7 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
     obs = env.current_obs
 
     problem = MINLP(env, obs)
-    # problem.add_bus_type_constraints()
+    problem.add_bus_type_constraints()
     problem.add_power_flow_equations()
 
     # Fix voltage variables

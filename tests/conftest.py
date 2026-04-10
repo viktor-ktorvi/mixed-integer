@@ -102,7 +102,7 @@ def case14_one_gen_on_bus_1_and_one_gen_on_bus_2(case14_default: Environment) ->
     action_dict = set_line_buses(line_ids=[8], sub_ids=[5], bus_ids=[2], action_dict=action_dict, obs=obs)
 
     action_dict = set_gen_buses(
-        gen_ids=[2],
+        gen_ids=[3],
         bus_ids=[2],
         action_dict=action_dict,
     )
@@ -193,6 +193,25 @@ def case36_parallel_lines_one_connecting_to_bus_2(case36_default: Environment) -
     action_dict = get_empty_action_dict()
     action_dict = set_line_buses(line_ids=[18, 49], sub_ids=[16, 16], bus_ids=[2, 2], action_dict=action_dict, obs=obs)
 
+    action = env.action_space(action_dict)
+    env.step(action)
+
+    return env
+
+
+@pytest.fixture
+def case36_one_gen_on_bus_1_and_one_gen_on_bus_2(case36_default: Environment) -> Environment:
+    env = case36_default
+
+    obs = env.reset()
+    action_dict = get_empty_action_dict()
+    action_dict = set_line_buses(line_ids=[19], sub_ids=[16], bus_ids=[2], action_dict=action_dict, obs=obs)
+
+    action_dict = set_gen_buses(
+        gen_ids=[8],
+        bus_ids=[2],
+        action_dict=action_dict,
+    )
     action = env.action_space(action_dict)
     env.step(action)
 
