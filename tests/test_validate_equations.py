@@ -56,17 +56,17 @@ def make_obs_from_gekko(problem: MINLP) -> SimpleNamespace:
 @pytest.mark.parametrize(
     "env_fixture_name",
     [
-        # "case14_default",
-        # "case14_2_lines_and_load_on_busbar_2",
+        "case14_default",
+        "case14_2_lines_and_load_on_busbar_2",
         "case14_line_on_bus_2_on_both_ends",
-        # "case14_line_on_isolated_bus",
-        # "case14_one_gen_on_bus_1_and_one_gen_on_bus_2",
-        # "case14_substation_with_everything_on_bus_2",
-        # "case14_overloaded",
-        # "case36_default",
-        # "case36_one_load_on_bus_2_others_on_bus_1",
-        # "case36_parallel_lines_one_connecting_to_bus_2",
-        # "case36_one_gen_on_bus_1_and_one_gen_on_bus_2",
+        "case14_line_on_isolated_bus",
+        "case14_one_gen_on_bus_1_and_one_gen_on_bus_2",
+        "case14_substation_with_everything_on_bus_2",
+        "case14_overloaded",
+        "case36_default",
+        "case36_one_load_on_bus_2_others_on_bus_1",
+        "case36_parallel_lines_one_connecting_to_bus_2",
+        "case36_one_gen_on_bus_1_and_one_gen_on_bus_2",
         # "case118_default",
     ],
 )
@@ -116,6 +116,19 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
         problem.m.solve(disp=True, debug=True)
     except:
         print(f"{problem.m.path=}")
+
+    for bus_id in problem.debug_Vm_res:
+        Vm = problem.Vm[bus_id].value[0]
+        theta = problem.theta[bus_id].value[0]
+
+        Vm_res = problem.debug_Vm_res[bus_id]
+        theta_res = problem.debug_theta_res[bus_id]
+
+        if bus_id in env.backend._grid.gen.bus:
+            assert np.isclose(Vm, Vm_res)
+
+            if any(env.backend._grid.gen[env.backend._grid.gen.bus == bus_id].slack):
+                assert np.isclose(theta, theta_res)
 
     # TODO 80% sure the power flow equations are good, and that the issue is in the bus types
     fake_obs = make_obs_from_gekko(problem)
