@@ -71,6 +71,8 @@ class MINLP:
 
         self.debug_Vm_res = {}
         self.debug_theta_res = {}
+        self.debug_pf_line = {}
+        self.debug_qf_line = {}
 
     def fix(self, var, value):
         var.value = value
@@ -224,20 +226,16 @@ class MINLP:
                 Pf_total = Pf_total + Pf_line
                 Qf_total = Qf_total + Qf_line
 
-                # if line_idx not in self.line_f_indices:
-                #     self.line_f_indices.add(line_idx)
-                #     If_total_abs_pu = self.m.Intermediate(self.m.sqrt(If_total_r**2 + If_total_i**2))  # pu
-                #
-                #     # TODO ovo je mogla biti i zasebna funkcija ali neka
-                #
-                #     # TODO sta ako je trenutna sabirnica neaktivna? da li cu moci da procitam
-                #     #  ako ne, onda cu morati da procitam sa druge sabirnice
-                #     vn_bus_kv = self.net.bus.loc[bus_id].vn_kv
-                #     If_base_A = (self.baseMVA / (np.sqrt(3) * vn_bus_kv)) * 1000
-                #     If_limit_pu = self.obs.thermal_limit[line_idx] / If_base_A
-                #     utilization = self.m.Intermediate(If_total_abs_pu / If_limit_pu)
-                #     self.utilizations.append(utilization)
-                #     self.m.Equation(utilization < 1.0)
+                if line_idx not in self.line_f_indices:
+                    self.line_f_indices.add(line_idx)
+
+                    S_MVA = self.m.sqrt(Pf_line**2 + Qf_line**2) * self.baseMVA
+                    vn_bus_kv = self.net.bus.loc[bus_id].vn_kv
+                    If_A = S_MVA * 1e6 / (np.sqrt(3) * vn_bus_kv * Vm_f * 1e3)
+
+                    utilization = self.m.Intermediate(If_A / self.obs.thermal_limit[line_idx])
+                    self.utilizations.append(utilization)
+                    self.m.Equation(utilization < 1.0)
 
             # ── Lines (to side) ───────────────────────────────────────────────────
             Pt_total = 0

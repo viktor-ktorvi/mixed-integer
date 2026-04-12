@@ -111,6 +111,27 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
         assert P_res.value[0] < tolerance
         assert Q_res.value[0] < tolerance
 
+    net = env.backend._grid
+    rho_calc = np.zeros(len(obs.p_or))
+    for line_id in range(len(obs.p_or)):
+        bus_id = obs.line_or_to_subid[line_id]  # or end bus
+
+        S_mva = np.sqrt(obs.p_or[line_id]**2 + obs.q_or[line_id]**2)
+
+        vn_kv = net.bus.loc[bus_id].vn_kv
+        Vm_pu = net.res_bus.vm_pu[bus_id]
+
+        V_kv = Vm_pu * vn_kv
+
+        I_actual_A = (S_mva * 1e6) / (np.sqrt(3) * V_kv * 1e3)
+        I_limit_A = obs.thermal_limit[line_id]
+
+        rho_calc[line_id] = I_actual_A / I_limit_A
+
+    assert np.isclose(rho_calc, obs.rho)
+
+    # for utilization, rho in zip(problem.utilizations, obs.rho):
+    #     assert np.isclose(utilization.value[0], rho)
 
 @pytest.mark.parametrize(
     "env_fixture_name",
