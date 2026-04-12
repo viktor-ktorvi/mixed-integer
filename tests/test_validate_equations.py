@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from grid2op.Agent import DoNothingAgent, RandomAgent
 
-from scripts.minlp import MINLP, fix
+from scripts.minlp import MINLP
 from src.power_flow.validate_equations import validate_equations
 
 
@@ -74,7 +74,7 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
     env = request.getfixturevalue(env_fixture_name)
     obs = env.current_obs
 
-    problem = MINLP(env, obs)
+    problem = MINLP(env, obs, validation_mode=True)
     problem.add_bus_type_constraints()
     problem.add_power_flow_equations()
 
@@ -86,36 +86,33 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
                 busbar1_id = i - problem.n_sub  # since busbar 2 = busbar 1 index + n_sub
             else:
                 busbar1_id = i + problem.n_sub
-            fix(problem.Vm[i], problem.net.res_bus.vm_pu[busbar1_id])
-            fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[busbar1_id]))
+            problem.fix(problem.Vm[i], problem.net.res_bus.vm_pu[busbar1_id])
+            problem.fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[busbar1_id]))
         else:
-            fix(problem.Vm[i], problem.net.res_bus.vm_pu[i])
-            fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[i]))
+            problem.fix(problem.Vm[i], problem.net.res_bus.vm_pu[i])
+            problem.fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[i]))
 
     for i in range(problem.n_gen):
-        fix(problem.Pg[i], problem.net.res_gen.p_mw[i] / problem.baseMVA)
-        fix(problem.Qg[i], problem.net.res_gen.q_mvar[i] / problem.baseMVA)
+        problem.fix(problem.Pg[i], problem.net.res_gen.p_mw[i] / problem.baseMVA)
+        problem.fix(problem.Qg[i], problem.net.res_gen.q_mvar[i] / problem.baseMVA)
 
     # Fix binary switching variables
     for i in range(problem.n_gen):
-        fix(problem.a_gen[i], obs.gen_bus[i] - 1)
+        problem.fix(problem.a_gen[i], obs.gen_bus[i] - 1)
 
     for i in range(problem.n_load):
-        fix(problem.a_load[i], obs.load_bus[i] - 1)
+        problem.fix(problem.a_load[i], obs.load_bus[i] - 1)
 
     for i in range(problem.n_line):
-        fix(problem.a_or[i], obs.line_or_bus[i] - 1)
-        fix(problem.a_ex[i], obs.line_ex_bus[i] - 1)
+        problem.fix(problem.a_or[i], obs.line_or_bus[i] - 1)
+        problem.fix(problem.a_ex[i], obs.line_ex_bus[i] - 1)
 
     problem.m.options.SOLVER = 1  # APOPT (needed for integer vars)
     problem.m.options.IMODE = 3  # steady-state optimization
     problem.m.options.COLDSTART = 0
     problem.m.Minimize(0)  # no objective, just check constraints
 
-    try:
-        problem.m.solve(disp=True, debug=True)
-    except:
-        print(f"{problem.m.path=}")
+    problem.m.solve(disp=True, debug=True)
 
     for bus_id in problem.debug_Vm_res:
         Vm = problem.Vm[bus_id].value[0]
@@ -130,7 +127,6 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
             if any(env.backend._grid.gen[env.backend._grid.gen.bus == bus_id].slack):
                 assert np.isclose(theta, theta_res)
 
-    # TODO 80% sure the power flow equations are good, and that the issue is in the bus types
     fake_obs = make_obs_from_gekko(problem)
     validate_equations(env, fake_obs, threshold=tolerance, verbose=True)
 

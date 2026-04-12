@@ -253,5 +253,7 @@ def validate_equations(env: Environment, obs: Observation, *, threshold: float =
             print(f"{P_balance=}")
             print(f"{Q_balance=}")
 
+        if not p_balance_correct:
+            pass
         assert p_balance_correct
         assert q_balance_correct

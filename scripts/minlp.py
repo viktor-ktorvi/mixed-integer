@@ -1,6 +1,7 @@
 import grid2op
 import numpy as np
 from gekko import GEKKO
+from gekko.gk_variable import GKVariable
 from grid2op import Environment, Observation
 
 from power_flow.validate_equations import (
@@ -25,32 +26,36 @@ def get_grid_sizes(env: Environment) -> tuple[int, int, int, int, int]:
     return n_sub, n_bus, n_gen, n_load, n_line
 
 
-def fix(var, value):
-    var.value = value
-    var.LOWER = value
-    var.UPPER = value
-
-
 class MINLP:
-    def __init__(self, env: Environment, obs: Observation) -> None:
+    def __init__(self, env: Environment, obs: Observation, validation_mode: bool = False) -> None:
         self.env = env
         self.obs = obs
+        self.validation_mode = validation_mode
 
         self.m = GEKKO(remote=False)
 
         self.n_sub, self.n_bus, self.n_gen, self.n_load, self.n_line = get_grid_sizes(env)
 
-        # TODO navodno ako ovo m.Var zamenim sa m.Param, onda mogu da debagujem sta se desava iznutra
-        self.Vm = self.m.Array(self.m.Var, self.n_bus, lb=0, value=1)
-        self.theta = self.m.Array(self.m.Var, self.n_bus, lb=-np.pi, ub=np.pi)
+        if validation_mode:
+            self.Vm = self.m.Array(self.m.Var, self.n_bus, lb=0, value=1)
+            self.theta = self.m.Array(self.m.Var, self.n_bus, lb=-np.pi, ub=np.pi)
+            self.Pg = self.m.Array(self.m.Var, self.n_gen, value=0)
+            self.Qg = self.m.Array(self.m.Var, self.n_gen, value=0)
+            self.a_gen = self.m.Array(self.m.Param, self.n_gen, value=0)
+            self.a_load = self.m.Array(self.m.Param, self.n_load, value=0)
+            self.a_or = self.m.Array(self.m.Param, self.n_line, value=0)
+            self.a_ex = self.m.Array(self.m.Param, self.n_line, value=0)
+        else:
+            self.Vm = self.m.Array(self.m.Var, self.n_bus, lb=0, value=1)
+            self.theta = self.m.Array(self.m.Var, self.n_bus, lb=-np.pi, ub=np.pi)
 
-        self.Pg = self.m.Array(self.m.Var, self.n_gen)
-        self.Qg = self.m.Array(self.m.Var, self.n_gen)
+            self.Pg = self.m.Array(self.m.Var, self.n_gen)
+            self.Qg = self.m.Array(self.m.Var, self.n_gen)
 
-        self.a_gen = self.m.Array(self.m.Var, self.n_gen, integer=True, lb=0, ub=1)
-        self.a_load = self.m.Array(self.m.Var, self.n_load, integer=True, lb=0, ub=1)
-        self.a_or = self.m.Array(self.m.Var, self.n_line, integer=True, lb=0, ub=1)
-        self.a_ex = self.m.Array(self.m.Var, self.n_line, integer=True, lb=0, ub=1)
+            self.a_gen = self.m.Array(self.m.Var, self.n_gen, integer=True, lb=0, ub=1)
+            self.a_load = self.m.Array(self.m.Var, self.n_load, integer=True, lb=0, ub=1)
+            self.a_or = self.m.Array(self.m.Var, self.n_line, integer=True, lb=0, ub=1)
+            self.a_ex = self.m.Array(self.m.Var, self.n_line, integer=True, lb=0, ub=1)
 
         self.M_vm: float = 0.2
         self.M_th: float = np.pi
@@ -64,7 +69,17 @@ class MINLP:
         self.line_f_indices = set()
         self.utilizations = []
 
+        self.debug_Vm_res = {}
+        self.debug_theta_res = {}
+
+    def fix(self, var, value):
+        var.value = value
+        if isinstance(var, GKVariable):
+            var.LOWER = value
+            var.UPPER = value
+
     def add_bus_type_constraints(self):
+        print("About to add bus type constraints")
         for bus_id in range(self.n_bus):
             sub_id = get_bus_subid(bus_id, n_sub=self.n_sub)
             busbar = get_bus_busbar_number(bus_id, n_sub=self.n_sub)
@@ -92,6 +107,8 @@ class MINLP:
 
                 # Vm and theta are fixed if the slack gen is connected to the bus (slack), otherwise variables (PQ)
 
+                # self.m.Equation(self.Vm[bus_id] >= 0.0)
+
                 self.m.Equation(self.Vm[bus_id] >= Vm_res - self.M_vm * a_gs)
                 self.m.Equation(self.Vm[bus_id] <= Vm_res + self.M_vm * a_gs)
 
@@ -105,7 +122,7 @@ class MINLP:
 
                 # fix all the generator active powers, because they're gonna be attached to PV buses anyhow
                 for g in gen_ids:
-                    fix(self.Pg[g], self.net.res_gen.p_mw[g] / self.baseMVA)
+                    self.fix(self.Pg[g], self.net.res_gen.p_mw[g] / self.baseMVA)
 
                 # Qg remains free
                 # theta remains free
@@ -119,6 +136,9 @@ class MINLP:
 
                 n_g = len(a_g)
 
+                self.debug_Vm_res[bus_id] = Vm_res
+                self.debug_theta_res[bus_id] = theta_res
+
                 z = self.m.Var(integer=True, lb=0, ub=1)  # z == 0 if at least one generator is at busbar
                 for a_gi in a_g:
                     self.m.Equation(z <= a_gi)
@@ -130,9 +150,6 @@ class MINLP:
 
     def add_power_flow_equations(self):
         for bus_id in range(self.n_bus):
-            # TODO how does conservation of power work on disconnected buses?
-            #  does it need handling or does it sort itself out?
-
             sub_id = get_bus_subid(bus_id, n_sub=self.n_sub)
             busbar = get_bus_busbar_number(bus_id, n_sub=self.n_sub)
 
@@ -248,8 +265,6 @@ class MINLP:
                 Vm_f2 = self.Vm[from_buses[1]]
                 theta_f2 = self.theta[from_buses[1]]
 
-                # TODO get variables
-                #  replace np. with self.m.
                 # fmt: off
                 if busbar == 1:
                     Pt_line = Vm_t*(1 - a_t)*(Vm_t*(1 - a_t)*(-Ytt_i*self.m.sin(theta_t) + Ytt_r*self.m.cos(theta_t))*self.m.cos(theta_t) - Vm_t*(1 - a_t)*(-Ytt_i*self.m.cos(theta_t) - Ytt_r*self.m.sin(theta_t))*self.m.sin(theta_t) + (-Vm_f1*Ytf_i*(1 - a_f)*self.m.sin(theta_f1) + Vm_f1*Ytf_r*(1 - a_f)*self.m.cos(theta_f1) - Vm_f2*Ytf_i*a_f*self.m.sin(theta_f2) + Vm_f2*Ytf_r*a_f*self.m.cos(theta_f2))*self.m.cos(theta_t) - (-Vm_f1*Ytf_i*(1 - a_f)*self.m.cos(theta_f1) - Vm_f1*Ytf_r*(1 - a_f)*self.m.sin(theta_f1) - Vm_f2*Ytf_i*a_f*self.m.cos(theta_f2) - Vm_f2*Ytf_r*a_f*self.m.sin(theta_f2))*self.m.sin(theta_t))  # noqa: E226
@@ -283,9 +298,6 @@ def main() -> None:
 
     # TODO where is the current < current limit part?
 
-    # TODO make this formulation it's own function
-    #  add in the existing test fixture setup, fix all the variables to the ground truth and make sure energy is conserved
-
     # TODO extract the action dict from the solutions
 
     # TODO finally, run an episode while solving the problem
@@ -296,32 +308,46 @@ def main() -> None:
         if np.isnan(problem.net.res_bus.vm_pu[i]):
             # Mirror from the corresponding busbar 1
             busbar1_id = i - problem.n_sub  # since busbar 2 = busbar 1 index + n_sub
-            fix(problem.Vm[i], problem.net.res_bus.vm_pu[busbar1_id])
-            fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[busbar1_id]))
+            problem.fix(problem.Vm[i], problem.net.res_bus.vm_pu[busbar1_id])
+            problem.fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[busbar1_id]))
         else:
-            fix(problem.Vm[i], problem.net.res_bus.vm_pu[i])
-            fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[i]))
+            problem.fix(problem.Vm[i], problem.net.res_bus.vm_pu[i])
+            problem.fix(problem.theta[i], np.deg2rad(problem.net.res_bus.va_degree[i]))
 
     for i in range(problem.n_gen):
-        fix(problem.Pg[i], problem.net.res_gen.p_mw[i] / problem.baseMVA)
-        fix(problem.Qg[i], problem.net.res_gen.q_mvar[i] / problem.baseMVA)
+        problem.fix(problem.Pg[i], problem.net.res_gen.p_mw[i] / problem.baseMVA)
+        problem.fix(problem.Qg[i], problem.net.res_gen.q_mvar[i] / problem.baseMVA)
 
     # Fix binary switching variables
     for i in range(problem.n_gen):
-        fix(problem.a_gen[i], obs.gen_bus[i] - 1)
+        problem.fix(problem.a_gen[i], obs.gen_bus[i] - 1)
 
     for i in range(problem.n_load):
-        fix(problem.a_load[i], obs.load_bus[i] - 1)
+        problem.fix(problem.a_load[i], obs.load_bus[i] - 1)
 
     for i in range(problem.n_line):
-        fix(problem.a_or[i], obs.line_or_bus[i] - 1)
-        fix(problem.a_ex[i], obs.line_ex_bus[i] - 1)
+        problem.fix(problem.a_or[i], obs.line_or_bus[i] - 1)
+        problem.fix(problem.a_ex[i], obs.line_ex_bus[i] - 1)
 
     problem.m.options.SOLVER = 1  # APOPT (needed for integer vars)
     problem.m.options.IMODE = 3  # steady-state optimization
 
     problem.m.Minimize(0)  # no objective, just check constraints
     problem.m.solve(disp=True)
+
+    print("After solving")
+    for bus_id in problem.debug_Vm_res:
+        Vm = problem.Vm[bus_id].value[0]
+        theta = problem.theta[bus_id].value[0]
+
+        Vm_res = problem.debug_Vm_res[bus_id]
+        theta_res = problem.debug_theta_res[bus_id]
+
+        print(f"{bus_id=}, {Vm=}, {theta=}")
+        print(f"{bus_id=}, {Vm_res=}, {theta_res=}")
+
+        assert np.isclose(Vm, Vm_res)
+        assert np.isclose(theta, theta_res)
 
     # Print intermediate values to verify balance equations
     print("Checking power balance residuals...")
