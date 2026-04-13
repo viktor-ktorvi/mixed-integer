@@ -3,7 +3,7 @@ import pytest
 from grid2op.Agent import DoNothingAgent, RandomAgent
 
 from scripts.minlp import MINLP
-from src.power_flow.validate_equations import validate_equations
+from src.power_flow.validate_equations import get_bus_busbar_number, validate_equations
 from tests.utils import make_obs_from_gekko
 
 
@@ -36,7 +36,7 @@ def test_validate_equations_predetermined_scenarios(request, env_fixture_name: s
         "case14_2_lines_and_load_on_busbar_2",
         "case14_line_on_bus_2_on_both_ends",
         "case14_line_on_isolated_bus",
-        "case14_one_gen_on_bus_1_and_one_gen_on_bus_2",
+        "case14_one_gen_on_bus_1_and_one_gen_on_bus_2",  # TODO 150% util, doesn't converge in GEKKO
         "case14_substation_with_everything_on_bus_2",
         "case14_overloaded",
         "case36_default",
@@ -50,7 +50,7 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
     env = request.getfixturevalue(env_fixture_name)
     obs = env.current_obs
 
-    problem = MINLP(env, obs, validation_mode=True)
+    problem = MINLP(env, obs, utilization_threshold=max(obs.rho), validation_mode=True)
     problem.add_bus_type_constraints()
     problem.add_power_flow_equations()
 
@@ -111,27 +111,18 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
         assert P_res.value[0] < tolerance
         assert Q_res.value[0] < tolerance
 
-    net = env.backend._grid
-    rho_calc = np.zeros(len(obs.p_or))
-    for line_id in range(len(obs.p_or)):
-        bus_id = obs.line_or_to_subid[line_id]  # or end bus
+    for bus_id, line_idx in problem.utilizations:
+        utilization = problem.utilizations[(bus_id, line_idx)].value[0]
 
-        S_mva = np.sqrt(obs.p_or[line_id]**2 + obs.q_or[line_id]**2)
+        busbar = get_bus_busbar_number(bus_id, n_sub=problem.n_sub)
+        a_or = problem.a_or[line_idx].value[0] + 1
 
-        vn_kv = net.bus.loc[bus_id].vn_kv
-        Vm_pu = net.res_bus.vm_pu[bus_id]
+        if busbar == a_or:
+            rho = obs.rho[line_idx]
+        else:
+            rho = 0.0
+        assert np.isclose(utilization, rho)
 
-        V_kv = Vm_pu * vn_kv
-
-        I_actual_A = (S_mva * 1e6) / (np.sqrt(3) * V_kv * 1e3)
-        I_limit_A = obs.thermal_limit[line_id]
-
-        rho_calc[line_id] = I_actual_A / I_limit_A
-
-    assert np.isclose(rho_calc, obs.rho)
-
-    # for utilization, rho in zip(problem.utilizations, obs.rho):
-    #     assert np.isclose(utilization.value[0], rho)
 
 @pytest.mark.parametrize(
     "env_fixture_name",

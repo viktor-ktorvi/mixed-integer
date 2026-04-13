@@ -27,10 +27,13 @@ def get_grid_sizes(env: Environment) -> tuple[int, int, int, int, int]:
 
 
 class MINLP:
-    def __init__(self, env: Environment, obs: Observation, validation_mode: bool = False) -> None:
+    def __init__(
+        self, env: Environment, obs: Observation, utilization_threshold: float, validation_mode: bool = False
+    ) -> None:
         self.env = env
         self.obs = obs
         self.validation_mode = validation_mode
+        self.utilization_threshold = utilization_threshold
 
         self.m = GEKKO(remote=False)
 
@@ -67,7 +70,7 @@ class MINLP:
 
         self.residuals = []
         self.line_f_indices = set()
-        self.utilizations = []
+        self.utilizations = {}
 
         self.debug_Vm_res = {}
         self.debug_theta_res = {}
@@ -226,16 +229,17 @@ class MINLP:
                 Pf_total = Pf_total + Pf_line
                 Qf_total = Qf_total + Qf_line
 
-                if line_idx not in self.line_f_indices:
-                    self.line_f_indices.add(line_idx)
+                if (bus_id, line_idx) not in self.line_f_indices:
+                    self.line_f_indices.add((bus_id, line_idx))
 
                     S_MVA = self.m.sqrt(Pf_line**2 + Qf_line**2) * self.baseMVA
                     vn_bus_kv = self.net.bus.loc[bus_id].vn_kv
                     If_A = S_MVA * 1e6 / (np.sqrt(3) * vn_bus_kv * Vm_f * 1e3)
 
                     utilization = self.m.Intermediate(If_A / self.obs.thermal_limit[line_idx])
-                    self.utilizations.append(utilization)
-                    self.m.Equation(utilization < 1.0)
+                    self.utilizations[(bus_id, line_idx)] = utilization
+
+                    self.m.Equation(utilization < self.utilization_threshold)
 
             # ── Lines (to side) ───────────────────────────────────────────────────
             Pt_total = 0
@@ -290,11 +294,9 @@ def main() -> None:
     env = grid2op.make(env_name)
     obs = env.reset()
 
-    problem = MINLP(env, obs)
+    problem = MINLP(env, obs, utilization_threshold=1.0)
     problem.add_bus_type_constraints()
     problem.add_power_flow_equations()
-
-    # TODO where is the current < current limit part?
 
     # TODO extract the action dict from the solutions
 
