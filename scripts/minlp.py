@@ -10,11 +10,20 @@ from power_flow.validate_equations import (
     get_bus_subid,
     get_buses_at_sub,
 )
+from utils.grid2op import set_line_buses, get_empty_action_dict, set_gen_buses, set_load_buses
 
 
 def get_gen_ids_at_sub(sub_id: int, env: Environment) -> np.ndarray:
     return np.argwhere(sub_id == env.gen_to_subid).flatten()
 
+def get_load_ids_at_sub(sub_id: int, env: Environment) -> np.ndarray:
+    return np.argwhere(sub_id == env.load_to_subid).flatten()
+
+def get_line_or_ids_at_sub(sub_id: int, env: Environment) -> np.ndarray:
+    return np.argwhere(sub_id == env.line_or_to_subid).flatten()
+
+def get_line_ex_ids_at_sub(sub_id: int, env: Environment) -> np.ndarray:
+    return np.argwhere(sub_id == env.line_ex_to_subid).flatten()
 
 def get_grid_sizes(env: Environment) -> tuple[int, int, int, int, int]:
     n_sub = env.n_sub
@@ -84,7 +93,7 @@ class MINLP:
             var.UPPER = value
 
     def add_bus_type_constraints(self):
-        print("About to add bus type constraints")
+
         for bus_id in range(self.n_bus):
             sub_id = get_bus_subid(bus_id, n_sub=self.n_sub)
             busbar = get_bus_busbar_number(bus_id, n_sub=self.n_sub)
@@ -286,6 +295,42 @@ class MINLP:
             self.m.Equation(P_res == 0)
             self.m.Equation(Q_res == 0)
 
+    def get_action_dict(self, obs: Observation) -> dict:
+        action_dict = get_empty_action_dict()
+                # TODO mozda ovde ima gresaka tipa akcije bi trebalo da budu [1, 2] ili [0, 1]
+
+        # TODO nisam siguran u ovo
+        action_dict = set_line_buses(line_ids=list(range(self.n_line)), sub_ids=obs.line_or_to_subid, bus_ids=[a.value[0] + 1 for a in self.a_or], action_dict=action_dict, obs=obs)
+        action_dict = set_line_buses(line_ids=list(range(self.n_line)), sub_ids=obs.line_ex_to_subid, bus_ids=[a.value[0] + 1 for a in self.a_ex], action_dict=action_dict, obs=obs)
+
+        action_dict = set_gen_buses(gen_ids=list(range(self.n_gen)), bus_ids=[a.value[0] + 1 for a in self.a_gen], action_dict=action_dict)
+        action_dict = set_load_buses(load_ids=list(range(self.n_load)), bus_ids=[a.value[0] + 1 for a in self.a_load], action_dict=action_dict)
+
+        return action_dict
+
+    def fix_everything_outside_sub(self, sub_id: int) -> None:
+        gen_ids = get_gen_ids_at_sub(sub_id, self.env)
+        load_ids = get_load_ids_at_sub(sub_id, self.env)
+        line_or_ids = get_line_or_ids_at_sub(sub_id, self.env)
+        line_ex_ids = get_line_ex_ids_at_sub(sub_id, self.env)
+
+        # TODO mozda ovde ima gresaka tipa akcije bi trebalo da budu [1, 2] ili [0, 1]
+        for gen_id in range(self.n_gen):
+            if gen_id not in gen_ids:
+                self.fix(self.a_gen[gen_id], self.obs.gen_bus[gen_id] - 1)
+
+        for load_id in range(self.n_load):
+            if load_id not in load_ids:
+                self.fix(self.a_load[load_id], self.obs.load_bus[load_id] - 1)
+
+        for line_or_id in range(self.n_line):
+            if line_or_id not in line_or_ids:
+                self.fix(self.a_or[line_or_id], self.obs.line_or_bus[line_or_id] - 1)
+
+        for line_ex_id in range(self.n_line):
+            if line_ex_id not in line_ex_ids:
+                self.fix(self.a_ex[line_ex_id], self.obs.line_ex_bus[line_ex_id] - 1)
+
 
 def main() -> None:
     env_name = "l2rpn_case14_sandbox"
@@ -355,6 +400,10 @@ def main() -> None:
         print(f"bus {bus_id}: P_res={P_res.value[0]:.6f}, Q_res={Q_res.value[0]:.6f}")
         assert P_res.value[0] < 1e-6
         assert Q_res.value[0] < 1e-6
+
+
+    # TODO action dict
+
 
 
 if __name__ == "__main__":
