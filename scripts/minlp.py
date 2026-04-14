@@ -85,6 +85,7 @@ class MINLP:
         self.debug_theta_res = {}
         self.debug_pf_line = {}
         self.debug_qf_line = {}
+        self.t = self.m.Var()   # TODO not sure if necessary; might be slowing down the solving
 
     def fix(self, var, value):
         var.value = value
@@ -249,6 +250,7 @@ class MINLP:
                     self.utilizations[(bus_id, line_idx)] = utilization
 
                     self.m.Equation(utilization < self.utilization_threshold)
+                    self.m.Equation(self.t >= utilization)
 
             # ── Lines (to side) ───────────────────────────────────────────────────
             Pt_total = 0
@@ -297,16 +299,50 @@ class MINLP:
 
     def get_action_dict(self, obs: Observation) -> dict:
         action_dict = get_empty_action_dict()
-                # TODO mozda ovde ima gresaka tipa akcije bi trebalo da budu [1, 2] ili [0, 1]
+        # TODO mozda ovde ima gresaka tipa akcije bi trebalo da budu [1, 2] ili [0, 1]
 
         # TODO nisam siguran u ovo
-        action_dict = set_line_buses(line_ids=list(range(self.n_line)), sub_ids=obs.line_or_to_subid, bus_ids=[a.value[0] + 1 for a in self.a_or], action_dict=action_dict, obs=obs)
-        action_dict = set_line_buses(line_ids=list(range(self.n_line)), sub_ids=obs.line_ex_to_subid, bus_ids=[a.value[0] + 1 for a in self.a_ex], action_dict=action_dict, obs=obs)
+        gen_ids = []
+        gen_bus_ids = []
+        for i in range(self.n_gen):
+            problem_a_gen = int(self.a_gen[i].value[0]) + 1
+            if problem_a_gen != obs.gen_bus[i]:
+                gen_ids.append(i)
+                gen_bus_ids.append(problem_a_gen)
 
-        action_dict = set_gen_buses(gen_ids=list(range(self.n_gen)), bus_ids=[a.value[0] + 1 for a in self.a_gen], action_dict=action_dict)
-        action_dict = set_load_buses(load_ids=list(range(self.n_load)), bus_ids=[a.value[0] + 1 for a in self.a_load], action_dict=action_dict)
+        action_dict = set_gen_buses(gen_ids=gen_ids, bus_ids=gen_bus_ids, action_dict=action_dict)
+
+        load_ids = []
+        load_bus_ids = []
+        for i in range(self.n_load):
+            problem_a_load = int(self.a_load[i].value[0]) + 1
+            if problem_a_load != obs.load_bus[i]:
+                load_ids.append(i)
+                load_bus_ids.append(problem_a_load)
+
+        action_dict = set_load_buses(load_ids=load_ids, bus_ids=load_bus_ids, action_dict=action_dict)
+
+        line_ids = []
+        line_sub_ids = []
+        line_bus_ids = []
+        for i in range(self.n_line):
+            problem_a_or = int(self.a_or[i].value[0]) + 1
+            problem_a_ex = int(self.a_ex[i].value[0]) + 1
+
+            if problem_a_or != obs.line_or_bus[i]:
+                line_ids.append(i)
+                line_sub_ids.append(obs.line_or_to_subid[i])
+                line_bus_ids.append(problem_a_or)
+
+            if problem_a_ex != obs.line_ex_bus[i]:
+                line_ids.append(i)
+                line_sub_ids.append(obs.line_ex_to_subid[i])
+                line_bus_ids.append(problem_a_ex)
+
+        action_dict = set_line_buses(line_ids=line_ids, sub_ids=line_sub_ids, bus_ids=line_bus_ids, action_dict=action_dict, obs=obs)
 
         return action_dict
+
 
     def fix_everything_outside_sub(self, sub_id: int) -> None:
         gen_ids = get_gen_ids_at_sub(sub_id, self.env)
@@ -331,6 +367,95 @@ class MINLP:
             if line_ex_id not in line_ex_ids:
                 self.fix(self.a_ex[line_ex_id], self.obs.line_ex_bus[line_ex_id] - 1)
 
+    def compare_with_grid2op(self, new_obs: Observation) -> None:
+        net = self.env.backend._grid
+        print("=== Power flow comparison ===")
+
+        # Voltages
+        print("\n--- Vm ---")
+        print(f"{'bus':<6} {'MINLP':<10} {'grid2op':<10} {'diff':<10}")
+        for i in range(self.n_bus):
+            minlp_val = float(self.Vm[i].value[0] ) # fixed value
+            g2op_val = net.res_bus.vm_pu[i]
+            # TODO nisam siguran da li da se ignorisu nanovi
+            if np.isnan(g2op_val):
+                continue
+            diff = abs(minlp_val - g2op_val)
+            flag = " ***" if diff > 0.01 else ""
+            print(f"{i:<6} {minlp_val:<10.4f} {g2op_val:<10.4f} {diff:<10.4f}{flag}")
+
+        print("\n--- theta ---")
+        print(f"{'bus':<6} {'MINLP':<10} {'grid2op':<10} {'diff':<10}")
+        for i in range(self.n_bus):
+            minlp_val = float(self.theta[i].value[0])
+            g2op_val = np.deg2rad(net.res_bus.va_degree[i])
+            if np.isnan(g2op_val):
+                continue
+            diff = abs(minlp_val - g2op_val)
+            flag = " ***" if diff > 0.01 else ""
+            print(f"{i:<6} {minlp_val:<10.4f} {g2op_val:<10.4f} {diff:<10.4f}{flag}")
+
+        # Generator dispatch
+        print("\n--- Pg ---")
+        print(f"{'gen':<6} {'MINLP':<10} {'grid2op':<10} {'diff':<10}")
+        for i in range(self.n_gen):
+            minlp_val = float(self.Pg[i].value[0])
+            g2op_val = net.res_gen.p_mw[i] / self.baseMVA
+            diff = abs(minlp_val - g2op_val)
+            flag = " ***" if diff > 0.01 else ""
+            print(f"{i:<6} {minlp_val:<10.4f} {g2op_val:<10.4f} {diff:<10.4f}{flag}")
+
+        print("\n--- Qg ---")
+        print(f"{'gen':<6} {'MINLP':<10} {'grid2op':<10} {'diff':<10}")
+        for i in range(self.n_gen):
+            minlp_val = float(self.Qg[i].value[0])
+            g2op_val = net.res_gen.q_mvar[i] / self.baseMVA
+            diff = abs(minlp_val - g2op_val)
+            flag = " ***" if diff > 0.01 else ""
+            print(f"{i:<6} {minlp_val:<10.4f} {g2op_val:<10.4f} {diff:<10.4f}{flag}")
+
+        # Topology
+        print("\n--- a_gen ---")
+        print(f"{'gen':<6} {'MINLP':<10} {'grid2op':<10}")
+        for i in range(self.n_gen):
+            minlp_val = int(round(float(self.a_gen[i].value[0])))
+            g2op_val = new_obs.gen_bus[i] - 1
+            flag = " ***" if minlp_val != g2op_val else ""
+            print(f"{i:<6} {minlp_val:<10} {g2op_val:<10}{flag}")
+
+        print("\n--- a_load ---")
+        print(f"{'load':<6} {'MINLP':<10} {'grid2op':<10}")
+        for i in range(self.n_load):
+            minlp_val = int(round(float(self.a_load[i].value[0])))
+            g2op_val = new_obs.load_bus[i] - 1
+            flag = " ***" if minlp_val != g2op_val else ""
+            print(f"{i:<6} {minlp_val:<10} {g2op_val:<10}{flag}")
+
+        print("\n--- a_or ---")
+        print(f"{'line':<6} {'MINLP':<10} {'grid2op':<10}")
+        for i in range(self.n_line):
+            minlp_val = int(round(float(self.a_or[i].value[0])))
+            g2op_val = new_obs.line_or_bus[i] - 1
+            flag = " ***" if minlp_val != g2op_val else ""
+            print(f"{i:<6} {minlp_val:<10} {g2op_val:<10}{flag}")
+
+        print("\n--- a_ex ---")
+        print(f"{'line':<6} {'MINLP':<10} {'grid2op':<10}")
+        for i in range(self.n_line):
+            minlp_val = int(round(float(self.a_ex[i].value[0])))
+            g2op_val = new_obs.line_ex_bus[i] - 1
+            flag = " ***" if minlp_val != g2op_val else ""
+            print(f"{i:<6} {minlp_val:<10} {g2op_val:<10}{flag}")
+
+        # Utilization
+        print("\n--- rho ---")
+        print(f"{'line':<6} {'MINLP':<10} {'grid2op':<10} {'diff':<10}")
+        for i in range(self.n_line):
+            minlp_val = float(self.utilizations[i].value[0])
+            g2op_val = new_obs.rho[i]
+            diff = abs(minlp_val - g2op_val)
+            flag = " ***" if diff > 0.05 else ""
+            print(f"{i:<6} {minlp_val:<10.4f} {g2op_val:<10.4f} {diff:<10.4f}{flag}")
 
 def main() -> None:
     env_name = "l2rpn_case14_sandbox"
