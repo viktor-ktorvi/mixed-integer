@@ -22,6 +22,10 @@ def main() -> None:
     counter = 0
 
     util_limit = 0.9
+    # TODO sa util_limit = 0.8 ima nekih upitnih situacija tipa
+    #  Successfully solved MINLP at sub_id=12 minlp_max_util=0.6324
+    #  Solving MINLP, counter=382 max_util=1.03
+    #  gde se stvari ne podudaraju; ove je za istragu; veoma je sumnjivo
     max_util_list = []
     while counter < max_simulation_steps:
         obs = env.reset()
@@ -40,6 +44,8 @@ def main() -> None:
                 print(f"Solving MINLP, {counter=} {max_util=:.2f}")
 
                 for sub_id in range(env.n_sub):
+                    # TODO nek se drzi hash table gde se broji
+                    #  koja podstanica najcesce resava pa neka se iteracije rade od te stanice
                     problem = MINLP(env, obs, utilization_threshold=util_limit)
                     problem.add_bus_type_constraints()
                     problem.add_power_flow_equations()
@@ -48,7 +54,9 @@ def main() -> None:
                     problem.m.options.SOLVER = 1  # APOPT (needed for integer vars)
                     # problem.m.options.IMODE = 3  # steady-state optimization
 
-                    problem.m.Minimize(problem.t)  # no objective, just check constraints
+                    # TODO da li moze da se smanji max iter? da se ubrzaju neuspesna resavanja?
+
+                    problem.m.Minimize(problem.t)
 
                     try:
                         problem.m.solve(disp=False)
