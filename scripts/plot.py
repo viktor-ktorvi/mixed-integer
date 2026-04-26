@@ -1,5 +1,6 @@
 import grid2op
 from grid2op.PlotGrid import PlotMatplot
+from matplotlib import pyplot as plt
 
 
 def main():
@@ -10,7 +11,7 @@ def main():
     obs = env.reset()
     plot_helper = PlotMatplot(env.observation_space, line_id=True, gen_id=True, load_id=True)
     fig = plot_helper.plot_obs(obs)
-    fig.show()
+    plt.show()
 
 
 if __name__ == "__main__":
