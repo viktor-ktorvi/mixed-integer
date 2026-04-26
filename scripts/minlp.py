@@ -4,26 +4,35 @@ from gekko import GEKKO
 from gekko.gk_variable import GKVariable
 from grid2op import Environment, Observation
 
-from power_flow.validate_equations import (
+from src.power_flow.validate_equations import (
     calc_admittances,
     get_bus_busbar_number,
     get_bus_subid,
     get_buses_at_sub,
 )
-from utils.grid2op import set_line_buses, get_empty_action_dict, set_gen_buses, set_load_buses
+from src.utils.grid2op import (
+    get_empty_action_dict,
+    set_gen_buses,
+    set_line_buses,
+    set_load_buses,
+)
 
 
 def get_gen_ids_at_sub(sub_id: int, env: Environment) -> np.ndarray:
     return np.argwhere(sub_id == env.gen_to_subid).flatten()
 
+
 def get_load_ids_at_sub(sub_id: int, env: Environment) -> np.ndarray:
     return np.argwhere(sub_id == env.load_to_subid).flatten()
+
 
 def get_line_or_ids_at_sub(sub_id: int, env: Environment) -> np.ndarray:
     return np.argwhere(sub_id == env.line_or_to_subid).flatten()
 
+
 def get_line_ex_ids_at_sub(sub_id: int, env: Environment) -> np.ndarray:
     return np.argwhere(sub_id == env.line_ex_to_subid).flatten()
+
 
 def get_grid_sizes(env: Environment) -> tuple[int, int, int, int, int]:
     n_sub = env.n_sub
@@ -85,7 +94,7 @@ class MINLP:
         self.debug_theta_res = {}
         self.debug_pf_line = {}
         self.debug_qf_line = {}
-        self.t = self.m.Var()   # TODO not sure if necessary; might be slowing down the solving
+        self.t = self.m.Var()  # TODO not sure if necessary; might be slowing down the solving
 
     def fix(self, var, value):
         var.value = value
@@ -94,7 +103,6 @@ class MINLP:
             var.UPPER = value
 
     def add_bus_type_constraints(self):
-
         for bus_id in range(self.n_bus):
             sub_id = get_bus_subid(bus_id, n_sub=self.n_sub)
             busbar = get_bus_busbar_number(bus_id, n_sub=self.n_sub)
@@ -110,8 +118,6 @@ class MINLP:
                 # busbar is either slack or PQ depending on the switching of the slack generator
                 if len(gen_ids) != 1:
                     raise RuntimeError("Expected one generator on slack substation.")
-
-                # Pg and Qg remain variables (we don't do anything)
 
                 slack_gen_id = gen_ids[0]
 
@@ -297,11 +303,45 @@ class MINLP:
             self.m.Equation(P_res == 0)
             self.m.Equation(Q_res == 0)
 
+    def add_connectivity_constraints(self):
+        for sub_id in range(self.n_sub):
+            gen_ids = get_gen_ids_at_sub(sub_id, self.env)
+            load_ids = get_load_ids_at_sub(sub_id, self.env)
+            line_or_ids = get_line_or_ids_at_sub(sub_id, self.env)
+            line_ex_ids = get_line_ex_ids_at_sub(sub_id, self.env)
+
+            for busbar in [1, 2]:
+                if busbar == 1:
+                    elements_on_bus = (
+                        [1 - self.a_or[i] for i in line_or_ids]
+                        + [1 - self.a_ex[i] for i in line_ex_ids]
+                        + [1 - self.a_gen[i] for i in gen_ids]
+                        + [1 - self.a_load[i] for i in load_ids]
+                    )
+                else:
+                    elements_on_bus = (
+                        [self.a_or[i] for i in line_or_ids]
+                        + [self.a_ex[i] for i in line_ex_ids]
+                        + [self.a_gen[i] for i in gen_ids]
+                        + [self.a_load[i] for i in load_ids]
+                    )
+
+                if len(elements_on_bus) == 0:
+                    continue
+
+                sum_elements = self.m.sum(elements_on_bus)
+
+                # sum cannot equal 1 — either 0 (busbar empty) or >= 2 (valid busbar)
+                # Enforce: sum_elements != 1
+                # Equivalent to: sum_elements <= 0 OR sum_elements >= 2
+                # Using binary variable z: sum_elements <= M*z AND sum_elements >= 2 - M*(1-z)
+                n = len(elements_on_bus)
+                z = self.m.Var(integer=True, lb=0, ub=1)
+                self.m.Equation(sum_elements <= n * z)
+                self.m.Equation(sum_elements >= 2 - n * (1 - z))
+
     def get_action_dict(self, obs: Observation) -> dict:
         action_dict = get_empty_action_dict()
-        # TODO mozda ovde ima gresaka tipa akcije bi trebalo da budu [1, 2] ili [0, 1]
-
-        # TODO nisam siguran u ovo
         gen_ids = []
         gen_bus_ids = []
         for i in range(self.n_gen):
@@ -339,10 +379,11 @@ class MINLP:
                 line_sub_ids.append(obs.line_ex_to_subid[i])
                 line_bus_ids.append(problem_a_ex)
 
-        action_dict = set_line_buses(line_ids=line_ids, sub_ids=line_sub_ids, bus_ids=line_bus_ids, action_dict=action_dict, obs=obs)
+        action_dict = set_line_buses(
+            line_ids=line_ids, sub_ids=line_sub_ids, bus_ids=line_bus_ids, action_dict=action_dict, obs=obs
+        )
 
         return action_dict
-
 
     def fix_everything_outside_sub(self, sub_id: int) -> None:
         gen_ids = get_gen_ids_at_sub(sub_id, self.env)
@@ -375,7 +416,7 @@ class MINLP:
         print("\n--- Vm ---")
         print(f"{'bus':<6} {'MINLP':<10} {'grid2op':<10} {'diff':<10}")
         for i in range(self.n_bus):
-            minlp_val = float(self.Vm[i].value[0] ) # fixed value
+            minlp_val = float(self.Vm[i].value[0])  # fixed value
             g2op_val = net.res_bus.vm_pu[i]
             # TODO nisam siguran da li da se ignorisu nanovi
             if np.isnan(g2op_val):
@@ -457,6 +498,7 @@ class MINLP:
             flag = " ***" if diff > 0.05 else ""
             print(f"{i:<6} {minlp_val:<10.4f} {g2op_val:<10.4f} {diff:<10.4f}{flag}")
 
+
 def main() -> None:
     env_name = "l2rpn_case14_sandbox"
     # env_name = "l2rpn_icaps_2021_small"
@@ -467,11 +509,7 @@ def main() -> None:
     problem = MINLP(env, obs, utilization_threshold=1.0)
     problem.add_bus_type_constraints()
     problem.add_power_flow_equations()
-
-    # TODO extract the action dict from the solutions
-
-    # TODO finally, run an episode while solving the problem
-    #  check if the line utilizations are really bellow the threshold
+    problem.add_connectivity_constraints()
 
     # Fix voltage variables
     for i in range(problem.n_bus):
@@ -525,10 +563,6 @@ def main() -> None:
         print(f"bus {bus_id}: P_res={P_res.value[0]:.6f}, Q_res={Q_res.value[0]:.6f}")
         assert P_res.value[0] < 1e-6
         assert Q_res.value[0] < 1e-6
-
-
-    # TODO action dict
-
 
 
 if __name__ == "__main__":

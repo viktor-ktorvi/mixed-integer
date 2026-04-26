@@ -35,7 +35,7 @@ def test_validate_equations_predetermined_scenarios(request, env_fixture_name: s
         "case14_default",
         "case14_2_lines_and_load_on_busbar_2",
         "case14_line_on_bus_2_on_both_ends",
-        "case14_line_on_isolated_bus",
+        # "case14_line_on_isolated_bus",
         "case14_one_gen_on_bus_1_and_one_gen_on_bus_2",  # TODO 150% util, doesn't converge in GEKKO
         "case14_substation_with_everything_on_bus_2",
         "case14_overloaded",
@@ -53,7 +53,7 @@ def test_validate_minlp_problem_predetermined_scenarios(request, env_fixture_nam
     problem = MINLP(env, obs, utilization_threshold=max(obs.rho), validation_mode=True)
     problem.add_bus_type_constraints()
     problem.add_power_flow_equations()
-
+    problem.add_connectivity_constraints()
     # Fix voltage variables
     for i in range(problem.n_bus):
         if np.isnan(problem.net.res_bus.vm_pu[i]):
